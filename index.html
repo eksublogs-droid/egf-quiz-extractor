@@ -691,12 +691,12 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
 
   if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
-  const keyIdx = (startKeyIdx+attempt) % keys.length;
-  const apiKey = keys[keyIdx];
+  const keyIdx=(startKeyIdx+attempt)%keys.length;
+  const apiKey=keys[keyIdx];
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096,responseMimeType:'application/json'},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -705,19 +705,16 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
 
   if(res.status===429||res.status===503){
-    console.warn(`Key ${keyIdx} failed with status ${res.status} on attempt ${attempt}`);
     if(attempt>=keys.length*2-1){
       const err=await res.json().catch(()=>({}));
-      const msg=err?.error?.message||res.statusText;
-      throw new Error(`Gemini error (${res.status}): ${msg}`);
+      throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
-    // Rotate to next key silently
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
     return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
   }
@@ -730,14 +727,44 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     }
     throw new Error(`Gemini error: ${msg}`);
   }
-  const data=await res.json();
-  const text=data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if(!text) throw new Error('Empty response from Gemini. Try again.');
-  return text;
+
+  // ── Stream the response ──
+  const reader=res.body.getReader();
+  const decoder=new TextDecoder();
+  let fullText='';
+  let buffer='';
+
+  while(true){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buffer+=decoder.decode(value,{stream:true});
+    // SSE lines start with "data: "
+    const lines=buffer.split('\n');
+    buffer=lines.pop(); // keep incomplete last line
+    for(const line of lines){
+      if(!line.startsWith('data: ')) continue;
+      const json=line.slice(6).trim();
+      if(json==='[DONE]') continue;
+      try{
+        const chunk=JSON.parse(json);
+        const piece=chunk?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+        if(piece){
+          fullText+=piece;
+          // Update progress label with live character count
+          const label=document.getElementById('progressLabel');
+          if(label) label.textContent=`Receiving response... (${fullText.length} chars)`;
+        }
+      }catch(_){}
+    }
+  }
+
+  if(!fullText) throw new Error('Empty response from Gemini. Try again.');
+  return fullText;
 }
 
 // Robustly extract JSON from Gemini response regardless of wrapping
 function extractJSON(text){
+  if(!text) throw new Error('Empty response');
   // Strip markdown fences
   let s=text.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
   // Try direct parse first
@@ -750,7 +777,11 @@ function extractJSON(text){
   else { start=firstObj; endChar='}'; }
   const end=s.lastIndexOf(endChar);
   if(end===-1||end<start) throw new Error('No JSON found');
-  return JSON.parse(s.slice(start,end+1));
+  const candidate=s.slice(start,end+1);
+  try{ return JSON.parse(candidate); }catch(_){}
+  // Last resort: try to fix common issues like trailing commas
+  const fixed=candidate.replace(/,\s*([}\]])/g,'$1').replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
+  return JSON.parse(fixed);
 }
 
 
@@ -889,12 +920,10 @@ RULES:
     const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],null);
 
     setProgress(30,'Parsing extraction results...');
-
-    let extracted;
     try{
       extracted=extractJSON(extractText);
     }catch(e){
-      throw new Error('Failed to parse extraction response. The AI returned malformed data. Try again.');
+      throw new Error('Failed to parse extraction response. Try again.');
     }
 
     if(!extracted.questions||!extracted.questions.length){
