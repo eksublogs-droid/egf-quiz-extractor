@@ -699,7 +699,7 @@ async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyId
     generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
   };
   if(systemInstruction){
-    body.system_instruction={parts:[{text:systemInstruction}]};
+    body.systemInstruction={parts:[{text:systemInstruction}]};
   }
 
   let res;
