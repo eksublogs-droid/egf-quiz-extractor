@@ -648,8 +648,8 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL_VISION = 'gemini-2.0-flash-lite';   // image extraction
-const GEMINI_MODEL_TEXT   = 'gemini-2.5-flash';   // answer verification & tiebreaker
+const GEMINI_MODEL_VISION = 'gemini-2.5-flash-lite'; // image extraction (free tier, supports vision)
+const GEMINI_MODEL_TEXT   = 'gemini-2.5-flash';      // answer verification & tiebreaker (free tier)
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
