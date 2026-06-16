@@ -506,9 +506,8 @@
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
       <div class="progress-steps">
         <div class="step-item" id="step1"><div class="step-dot"></div>Extracting questions &amp; course info</div>
-        <div class="step-item" id="step2"><div class="step-dot"></div>Verifying answers — Pass 1 &amp; 2 (parallel)</div>
-        <div class="step-item" id="step3"><div class="step-dot"></div>Resolving any conflicts (tiebreaker)</div>
-        <div class="step-item" id="step4"><div class="step-dot"></div>Generating outputs</div>
+        <div class="step-item" id="step2"><div class="step-dot"></div>Verifying &amp; cross-checking answers</div>
+        <div class="step-item" id="step3"><div class="step-dot"></div>Generating outputs</div>
       </div>
     </div>
 
@@ -648,8 +647,7 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL_VISION = 'gemini-2.5-flash-lite'; // image extraction (free tier, supports vision)
-const GEMINI_MODEL_TEXT   = 'gemini-2.5-flash';      // answer verification & tiebreaker (free tier)
+const GEMINI_MODEL  = 'gemini-flash-latest';
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
@@ -686,7 +684,7 @@ function closeSettings(){ document.getElementById('settingsModal').classList.rem
 // ════════════════════════════════════════════════════════
 //  GEMINI API CALL WITH AUTO KEY ROTATION
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, model=GEMINI_MODEL_TEXT){
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
   if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
@@ -697,7 +695,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:8192},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -706,7 +704,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
@@ -717,14 +715,14 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
       throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
-    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,model);
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
     const msg=err?.error?.message||res.statusText;
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
-      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,model);
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -800,6 +798,19 @@ function extractJSON(text){
   throw new Error('Could not extract JSON from response');
 }
 
+// Ensure parsed value is an array.
+// Gemini sometimes wraps the array in an object e.g. {"answers":[...]}
+// This unwraps it so callers can safely use .forEach / .find / .map
+function ensureArray(val){
+  if(Array.isArray(val)) return val;
+  if(val&&typeof val==='object'){
+    // Return the first property whose value is an array
+    for(const key of Object.keys(val)){
+      if(Array.isArray(val[key])) return val[key];
+    }
+  }
+  return [];
+}
 
 // ════════════════════════════════════════════════════════
 function handleDrop(e){
@@ -891,7 +902,7 @@ function fileToBase64(file){
 //  PROGRESS HELPERS
 // ════════════════════════════════════════════════════════
 function setStep(n, state='active'){
-  for(let i=1;i<=4;i++){
+  for(let i=1;i<=3;i++){
     const el=document.getElementById('step'+i);
     el.className='step-item'+(i<n?' done':i===n?' '+state:'');
   }
@@ -949,7 +960,7 @@ Rules:
 - Questions with fewer than 4 options: include only what exists
 - YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
-    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.',0,null,GEMINI_MODEL_VISION);
+    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
 
     setProgress(30,'Parsing extraction results...');
     try{
@@ -975,91 +986,47 @@ Rules:
     yearInput.value=extracted.courseYear||'';
     [uniInput,facInput,titleInput,semInput,yearInput].forEach(el=>el.disabled=false);
 
-    setProgress(35,'Verifying answers — Pass 1 & 2 (parallel)...');
+    setProgress(35,'Verifying & cross-checking answers...');
     setStep(2,'active');
 
-    // ── STEPS 3 & 4: ANSWER VERIFICATION PASS 1 & PASS 2 IN PARALLEL ──
+    // ── STEP 2: SINGLE VERIFICATION CALL (pass 1 & 2 merged + auto-resolve) ──
     const questionsForVerification=extracted.questions.map((q,i)=>{
       const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-      return `Q${i+1}: ${q.question}\n${opts}`;
+      return `Q${i+1} (index ${i}): ${q.question}\n${opts}`;
     }).join('\n\n');
 
-    const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
-Return ONLY a valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+    const verifyPrompt=`You are an expert academic examiner. For each MCQ below, independently reason through it twice (Pass A and Pass B), then output the final agreed answer.
 
-QUESTIONS:
-${questionsForVerification}`;
-
-    const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
-Return ONLY a valid JSON array, no markdown:
+Return ONLY a valid JSON array, no markdown, no extra text:
 [{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+
+Rules:
+- qIndex is zero-based
+- correctLabel must be A/B/C/D
+- If your two passes disagree, pick the one you are most confident in and explain why
+- Return ONLY the JSON array
 
 QUESTIONS:
 ${questionsForVerification}`;
 
     const keys=getKeys();
-    const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length,GEMINI_MODEL_TEXT),
-      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length,GEMINI_MODEL_TEXT)
-    ]);
+    const verifyText=await geminiCall([{text:verifyPrompt}],null,0,currentKeyIndex%keys.length);
 
-    setProgress(70,'Resolving conflicts...');
-    setStep(3,'active');
+    setProgress(75,'Building answer map...');
     let pass1;
     try{
-      pass1=extractJSON(pass1Text);
+      pass1=ensureArray(extractJSON(verifyText));
     }catch(e){
-      throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+      throw new Error('Failed to parse answer verification. Try again.');
     }
-
-    let pass2;
-    try{
-      pass2=extractJSON(pass2Text);
-    }catch(e){
-      throw new Error('Failed to parse Pass 2 answer verification. Try again.');
-    }
-
-    setProgress(75,'Resolving conflicts...');
-    // ── STEP 3: CONFLICT RESOLUTION ──
-    const conflicts=[];
-    pass1.forEach((a1,idx)=>{
-      const a2=pass2.find(x=>x.qIndex===a1.qIndex);
-      if(a2&&a1.correctLabel!==a2.correctLabel) conflicts.push(a1.qIndex);
-    });
 
     const finalAnswers=new Map();
     pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
 
-    if(conflicts.length>0){
-      const conflictQuestions=conflicts.map(ci=>{
-        const q=extracted.questions[ci];
-        const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-        return `Q${ci+1} (index ${ci}): ${q.question}\n${opts}`;
-      }).join('\n\n');
-
-      const tiebreakPrompt=`Academic referee. Resolve conflicting MCQ answers. Return ONLY valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}]
-qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
-
-CONFLICTED QUESTIONS:
-${conflictQuestions}`;
-
-      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null,0,null,GEMINI_MODEL_TEXT);
-      try{
-        const resolved=extractJSON(tiebreakText);
-        resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
-      }catch(e){
-        // Keep pass1 answers if tiebreaker fails to parse
-      }
-    }
-
     setProgress(88,'Generating outputs...');
-    setStep(4,'active');
+    setStep(3,'active');
 
-    // ── STEP 4: BUILD FINAL DATA ──
+    // ── STEP 3: BUILD FINAL DATA ──
     const finalUniversity=document.getElementById('courseUniversity').value||extracted.courseUniversity||'';
     const finalFaculty=document.getElementById('courseFaculty').value||extracted.courseFaculty||'';
     const finalTitle=document.getElementById('courseTitle').value||extracted.courseTitle||'Unknown Course';
@@ -1100,7 +1067,7 @@ ${conflictQuestions}`;
     document.getElementById('jsonOutput').textContent=JSON.stringify(generatedJSON,null,2);
 
     setProgress(100,'Done!');
-    setStep(4,'done');
+    setStep(3,'done');
 
     setTimeout(()=>{
       document.getElementById('outputArea').style.display='block';
