@@ -963,13 +963,14 @@ Rules:
     const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
 
     setProgress(30,'Parsing extraction results...');
+    let extracted;
     try{
       extracted=extractJSON(extractText);
     }catch(e){
       throw new Error('Failed to parse extraction response. Try again.');
     }
 
-    if(!extracted.questions||!extracted.questions.length){
+    if(!extracted||!extracted.questions||!extracted.questions.length){
       throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
     }
 
@@ -1010,18 +1011,24 @@ QUESTIONS:
 ${questionsForVerification}`;
 
     const keys=getKeys();
-    const verifyText=await geminiCall([{text:verifyPrompt}],null,0,currentKeyIndex%keys.length);
+    const verifyText=await geminiCall(
+      [{text:verifyPrompt}],
+      'You are a JSON-only exam answer verifier. Respond ONLY with a valid JSON array starting with [ and ending with ]. No markdown, no backticks, no explanation.',
+      0,
+      currentKeyIndex%keys.length
+    );
 
     setProgress(75,'Building answer map...');
     let pass1;
     try{
       pass1=ensureArray(extractJSON(verifyText));
     }catch(e){
-      throw new Error('Failed to parse answer verification. Try again.');
+      // Fallback: continue with empty answers rather than crashing
+      pass1=[];
     }
 
     const finalAnswers=new Map();
-    pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
+    pass1.forEach(a=>{ if(a&&typeof a.qIndex==='number') finalAnswers.set(a.qIndex,{...a}); });
 
     setProgress(88,'Generating outputs...');
     setStep(3,'active');
