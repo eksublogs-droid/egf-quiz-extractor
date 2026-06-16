@@ -696,7 +696,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:8192},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -736,8 +736,24 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   return text;
 }
 
-// ════════════════════════════════════════════════════════
-//  FILE HANDLING
+// Robustly extract JSON from Gemini response regardless of wrapping
+function extractJSON(text){
+  // Strip markdown fences
+  let s=text.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+  // Try direct parse first
+  try{ return JSON.parse(s); }catch(_){}
+  // Find first { or [ and last matching } or ]
+  const firstObj=s.indexOf('{'); const firstArr=s.indexOf('[');
+  let start=-1; let endChar='';
+  if(firstObj===-1&&firstArr===-1) throw new Error('No JSON found');
+  if(firstObj===-1||(firstArr!==-1&&firstArr<firstObj)){ start=firstArr; endChar=']'; }
+  else { start=firstObj; endChar='}'; }
+  const end=s.lastIndexOf(endChar);
+  if(end===-1||end<start) throw new Error('No JSON found');
+  return JSON.parse(s.slice(start,end+1));
+}
+
+
 // ════════════════════════════════════════════════════════
 function handleDrop(e){
   e.preventDefault();
@@ -761,6 +777,8 @@ function handleFiles(files){
 
 function renderThumbs(){
   const grid=document.getElementById('thumbGrid');
+  // Revoke old object URLs to prevent memory leak
+  grid.querySelectorAll('img').forEach(img=>URL.revokeObjectURL(img.src));
   grid.innerHTML='';
   uploadedFiles.forEach((f,i)=>{
     const url=URL.createObjectURL(f);
@@ -854,47 +872,12 @@ async function startProcessing(){
       inline_data:{mime_type:mimeTypes[i],data:b64}
     }));
 
-    const extractionPrompt=`You are an expert academic document parser. Analyze ALL the provided images carefully.
-
-Extract EVERY question you can find across all images. Be thorough — do not miss any question.
-
-Also detect:
-- The university or institution name (look for headers, logos, letterheads)
-- The faculty or department name (e.g. "Faculty of Science", "Department of Physics")
-- The course name/title (look for headers, footers, watermarks, course codes)
-- The semester (e.g. "First Semester", "Second Semester", "Harmattan Semester")
-- The academic year or session (e.g. "2016/2017", "2023/24")
-
-Return ONLY a valid JSON object with this exact structure:
+    const extractionPrompt=`Parse this exam image. Return ONLY valid JSON, no markdown, no explanation.
 {
-  "courseUniversity": "FULL UNIVERSITY NAME HERE",
-  "courseFaculty": "FACULTY/DEPARTMENT NAME HERE",
-  "courseTitle": "FULL COURSE NAME HERE",
-  "courseSemester": "SEMESTER HERE",
-  "courseYear": "YEAR/SESSION HERE",
-  "questions": [
-    {
-      "question": "Full question text here",
-      "options": [
-        {"label": "A", "text": "Option text"},
-        {"label": "B", "text": "Option text"},
-        {"label": "C", "text": "Option text"},
-        {"label": "D", "text": "Option text"}
-      ]
-    }
-  ]
+  "courseUniversity":"","courseFaculty":"","courseTitle":"","courseSemester":"","courseYear":"",
+  "questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]
 }
-
-CRITICAL RULES:
-- Extract text with 100% precision. Copy every word exactly as it appears.
-- If options use letters (A, B, C, D) or numbers (1, 2, 3, 4) or (a, b, c, d), normalize to A, B, C, D.
-- If a question has fewer than 4 options, include only what exists.
-- If university is not found, use "".
-- If faculty is not found, use "".
-- If course title is not found, use "Unknown Course".
-- If semester is not found, use "".
-- If year is not found, use "Unknown Year".
-- Return ONLY the JSON. No markdown, no backticks, no explanation.`;
+Rules: Extract every question exactly as written. Normalize option labels to A B C D. If a field is not found use "". courseTitle default "Unknown Course". courseYear default "Unknown Year". Return ONLY the JSON.`;
 
     const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],null);
 
@@ -902,8 +885,7 @@ CRITICAL RULES:
 
     let extracted;
     try{
-      const cleaned=extractText.replace(/```json|```/g,'').trim();
-      extracted=JSON.parse(cleaned);
+      extracted=extractJSON(extractText);
     }catch(e){
       throw new Error('Failed to parse extraction response. The AI returned malformed data. Try again.');
     }
@@ -934,47 +916,21 @@ CRITICAL RULES:
       return `Q${i+1}: ${q.question}\n${opts}`;
     }).join('\n\n');
 
-    const verifyPrompt1=`You are a highly knowledgeable academic examiner with expertise across all university subjects. Your task is to answer each multiple-choice question below with 100% accuracy.
-
-For each question, identify the single correct answer and provide a clear, accurate academic explanation.
-
-QUESTIONS:
-${questionsForVerification}
-
-Return ONLY a valid JSON array with this exact structure:
-[
-  {
-    "qIndex": 0,
-    "correctLabel": "A",
-    "correctText": "The exact text of the correct option",
-    "explanation": "A thorough, accurate explanation of why this answer is correct, written for university students."
-  }
-]
-
-CRITICAL RULES:
-- Answer based on established academic knowledge. Be 100% accurate.
-- qIndex is zero-based (first question = 0).
-- correctLabel must be A, B, C, or D (whichever is correct).
-- correctText must exactly match the option text.
-- Explanation must be academically precise, clear, and helpful.
-- Return ONLY the JSON array. No markdown, no backticks, no extra text.`;
-
-    const verifyPrompt2=`You are a second independent academic examiner verifying answers. Re-answer each question completely independently without referencing any previous answers.
+    const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
 
 QUESTIONS:
-${questionsForVerification}
+${questionsForVerification}`;
 
-Return ONLY a valid JSON array:
-[
-  {
-    "qIndex": 0,
-    "correctLabel": "A",
-    "correctText": "The exact text of the correct option",
-    "explanation": "Thorough accurate explanation for university students."
-  }
-]
+    const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
 
-Be completely independent and accurate. Return ONLY the JSON array.`;
+QUESTIONS:
+${questionsForVerification}`;
 
     const keys=getKeys();
     const [pass1Text,pass2Text]=await Promise.all([
@@ -984,17 +940,16 @@ Be completely independent and accurate. Return ONLY the JSON array.`;
 
     setProgress(70,'Resolving conflicts...');
     setStep(3,'active');
+    let pass1;
     try{
-      const c=pass1Text.replace(/```json|```/g,'').trim();
-      pass1=JSON.parse(c);
+      pass1=extractJSON(pass1Text);
     }catch(e){
       throw new Error('Failed to parse Pass 1 answer verification. Try again.');
     }
 
     let pass2;
     try{
-      const c=pass2Text.replace(/```json|```/g,'').trim();
-      pass2=JSON.parse(c);
+      pass2=extractJSON(pass2Text);
     }catch(e){
       throw new Error('Failed to parse Pass 2 answer verification. Try again.');
     }
@@ -1017,29 +972,16 @@ Be completely independent and accurate. Return ONLY the JSON array.`;
         return `Q${ci+1} (index ${ci}): ${q.question}\n${opts}`;
       }).join('\n\n');
 
-      const tiebreakPrompt=`You are a senior academic referee. These specific questions had conflicting answers from two independent reviewers. Determine the single definitively correct answer for each.
+      const tiebreakPrompt=`Academic referee. Resolve conflicting MCQ answers. Return ONLY valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}]
+qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
 
 CONFLICTED QUESTIONS:
-${conflictQuestions}
-
-CRITICAL: qIndex must be the ZERO-BASED index shown in parentheses after each question label above (e.g. "index 2" means qIndex:2).
-
-Return ONLY a valid JSON array:
-[
-  {
-    "qIndex": 2,
-    "correctLabel": "A",
-    "correctText": "Exact option text",
-    "explanation": "Definitive explanation of why this is correct."
-  }
-]
-
-Return ONLY the JSON array. No markdown, no backticks.`;
+${conflictQuestions}`;
 
       const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null);
       try{
-        const c=tiebreakText.replace(/```json|```/g,'').trim();
-        const resolved=JSON.parse(c);
+        const resolved=extractJSON(tiebreakText);
         resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
       }catch(e){
         // Keep pass1 answers if tiebreaker fails to parse
