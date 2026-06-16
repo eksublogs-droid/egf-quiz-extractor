@@ -648,7 +648,8 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL  = 'gemini-2.0-flash';
+const MODEL_EXTRACT = 'gemini-1.5-flash';   // extraction: OCR work, generous quota
+const MODEL_ANSWER  = 'gemini-2.0-flash';   // answering:  needs best reasoning
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
@@ -683,12 +684,11 @@ function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); document.getEle
 function closeSettings(){ document.getElementById('settingsModal').classList.remove('open') }
 
 // ════════════════════════════════════════════════════════
-//  GEMINI API CALL WITH AUTO KEY ROTATION
+//  GEMINI API CALL — model-aware + per-key rotation
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null){
+async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyIdx=null){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
-  if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
 
   if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
   const keyIdx=(startKeyIdx+attempt)%keys.length;
@@ -705,25 +705,30 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
 
+  // Quota / rate-limit → rotate key, retry same model
   if(res.status===429||res.status===503){
-    if(attempt>=keys.length*2-1){
+    if(attempt>=keys.length-1){
+      // Signal caller that ALL keys are exhausted for this model
       const err=await res.json().catch(()=>({}));
-      throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
+      const quota=new Error(`QUOTA_EXHAUSTED:${model}`);
+      quota.geminiMsg=err?.error?.message||res.statusText;
+      throw quota;
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
-    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
+    return geminiCall(parts,systemInstruction,model,attempt+1,startKeyIdx);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
     const msg=err?.error?.message||res.statusText;
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
+      if(attempt>=keys.length-1) throw new Error('All API keys are invalid. Please check your keys.');
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
-      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
+      return geminiCall(parts,systemInstruction,model,attempt+1,startKeyIdx);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -738,9 +743,8 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     const {done,value}=await reader.read();
     if(done) break;
     buffer+=decoder.decode(value,{stream:true});
-    // SSE lines start with "data: "
     const lines=buffer.split('\n');
-    buffer=lines.pop(); // keep incomplete last line
+    buffer=lines.pop();
     for(const line of lines){
       if(!line.startsWith('data: ')) continue;
       const json=line.slice(6).trim();
@@ -750,10 +754,8 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
         const piece=chunk?.candidates?.[0]?.content?.parts?.[0]?.text||'';
         if(piece){
           fullText+=piece;
-          // Update progress label with live character count
           const label=document.getElementById('progressLabel');
           if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
-          // Yield to browser so UI actually paints on Android
           await new Promise(r=>setTimeout(r,0));
         }
       }catch(_){}
@@ -762,6 +764,42 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 
   if(!fullText) throw new Error('Empty response from Gemini. Try again.');
   return fullText;
+}
+
+// ════════════════════════════════════════════════════════
+//  SMART CALLER: tries primaryModel across all keys,
+//  then falls back to fallbackModel across all keys.
+//  If no fallback provided and all keys fail → throws.
+// ════════════════════════════════════════════════════════
+async function geminiCallSmart(parts, systemInstruction, primaryModel, fallbackModel=null, labelPrefix=''){
+  // Reset key rotation to start fresh for each smart call
+  const startIdx=currentKeyIndex;
+  try{
+    const result=await geminiCall(parts,systemInstruction,primaryModel,0,startIdx);
+    return result;
+  }catch(e){
+    if(e.message&&e.message.startsWith('QUOTA_EXHAUSTED:')){
+      // All keys exhausted on primaryModel
+      if(!fallbackModel){
+        throw new Error(`All keys quota-exhausted on ${primaryModel}. Please try again later or add more API keys.`);
+      }
+      // Show fallback notice in progress label
+      const label=document.getElementById('progressLabel');
+      if(label) label.textContent=`${labelPrefix}${primaryModel} quota hit — switching to ${fallbackModel}...`;
+      await new Promise(r=>setTimeout(r,800)); // brief pause so user sees the message
+      // Try fallbackModel across all keys
+      try{
+        const result=await geminiCall(parts,systemInstruction,fallbackModel,0,startIdx);
+        return result;
+      }catch(e2){
+        if(e2.message&&e2.message.startsWith('QUOTA_EXHAUSTED:')){
+          throw new Error(`All keys exhausted on both ${primaryModel} and ${fallbackModel}. Please add more API keys or wait for quota reset.`);
+        }
+        throw e2;
+      }
+    }
+    throw e;
+  }
 }
 
 // Robustly extract JSON from Gemini response regardless of wrapping
@@ -948,11 +986,18 @@ Rules:
 - Questions with fewer than 4 options: include only what exists
 - YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
-    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
+    const extractText=await geminiCallSmart(
+      [...imageParts,{text:extractionPrompt}],
+      'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.',
+      MODEL_EXTRACT,   // gemini-1.5-flash (primary for extraction)
+      null,            // no fallback — 1.5-flash IS the extraction model
+      'Extraction: '
+    );
 
     setProgress(30,'Parsing extraction results...');
+    let extracted;
     try{
-      let extracted=extractJSON(extractText);
+      extracted=extractJSON(extractText);
     }catch(e){
       throw new Error('Failed to parse extraction response. Try again.');
     }
@@ -999,10 +1044,9 @@ qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
 QUESTIONS:
 ${questionsForVerification}`;
 
-    const keys=getKeys();
     const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length),
-      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length)
+      geminiCallSmart([{text:verifyPrompt1}],null,MODEL_ANSWER,MODEL_EXTRACT,'Pass 1: '),
+      geminiCallSmart([{text:verifyPrompt2}],null,MODEL_ANSWER,MODEL_EXTRACT,'Pass 2: '),
     ]);
 
     setProgress(70,'Resolving conflicts...');
@@ -1046,7 +1090,7 @@ qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
 CONFLICTED QUESTIONS:
 ${conflictQuestions}`;
 
-      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null);
+      const tiebreakText=await geminiCallSmart([{text:tiebreakPrompt}],null,MODEL_ANSWER,MODEL_EXTRACT,'Tiebreak: ');
       try{
         const resolved=extractJSON(tiebreakText);
         resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
