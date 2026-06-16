@@ -60,7 +60,9 @@
   }
 
   /* ── LAYOUT ─────────────────────────────────────────── */
-  #app{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:0 20px 80px}
+  #app{position:relative;z-index:1;width:100%;max-width:1400px;margin:0 auto;padding:0 32px 80px}
+  @media(max-width:768px){#app{padding:0 16px 60px}}
+  @media(min-width:1400px){#app{max-width:1600px;padding:0 48px 80px}}
 
   /* ── HEADER ─────────────────────────────────────────── */
   header{
@@ -252,9 +254,9 @@
     flex-shrink:0;width:28px;padding-top:1px;
   }
   .q-content{flex:1}
-  .q-text{font-size:14px;color:var(--white);line-height:1.55;margin-bottom:8px}
-  .q-options{display:flex;flex-direction:column;gap:4px}
-  .q-opt{font-size:13px;color:var(--white-dim);display:flex;gap:7px}
+  .q-text{font-size:16px;color:var(--white);line-height:1.65;margin-bottom:10px;font-weight:500}
+  .q-options{display:flex;flex-direction:column;gap:6px}
+  .q-opt{font-size:14.5px;color:var(--white-dim);display:flex;gap:9px;line-height:1.55}
   .q-opt .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0}
   .q-opt.correct-opt .opt-label{color:var(--green)}
   .q-opt.correct-opt .opt-text{color:var(--white);font-weight:500}
@@ -1127,14 +1129,14 @@ async function downloadPDF(mode){
 
   function drawWatermark(){
     doc.saveGraphicsState();
-    doc.setGState(new doc.GState({opacity:0.045}));
+    doc.setGState(new doc.GState({opacity:0.06}));
     doc.setFont('helvetica','bold');
-    doc.setFontSize(38);
-    doc.setTextColor(200,220,255);
-    // Diagonal watermark repeated across page
-    for(let wx=10;wx<250;wx+=90){
-      for(let wy=30;wy<310;wy+=70){
-        doc.text('Eduglobalforge',wx,wy,{angle:35});
+    doc.setFontSize(13);
+    doc.setTextColor(120,150,210);
+    // Dense diagonal tiling — repeats well over 100 times per page
+    for(let wy=-10;wy<320;wy+=14){
+      for(let wx=-20;wx<240;wx+=38){
+        doc.text('Eduglobalforge',wx,wy,{angle:30});
       }
     }
     doc.restoreGraphicsState();
@@ -1164,7 +1166,13 @@ async function downloadPDF(mode){
     doc.setFont('helvetica','bold');
     doc.setFontSize(7.5);
     doc.setTextColor(...dimGray);
-    doc.text(`${title}${year?' · '+year:''}`,pageW/2,13.5,{align:'center'});
+    const courseInfoMaxW=pageW-margin*2-70;
+    let courseInfo=`${title}${year?' · '+year:''}`;
+    while(doc.getStringUnitWidth(courseInfo)*7.5/doc.internal.scaleFactor>courseInfoMaxW && courseInfo.length>10){
+      courseInfo=courseInfo.slice(0,-1);
+    }
+    if(courseInfo!==`${title}${year?' · '+year:''}`) courseInfo=courseInfo.trim()+'…';
+    doc.text(courseInfo,pageW/2,13.5,{align:'center'});
     return 30;
   }
 
@@ -1196,9 +1204,12 @@ async function downloadPDF(mode){
   doc.setFillColor(...blue);
   doc.roundedRect(margin,y,4,24,2,2,'F');
   doc.setFont('helvetica','bold');
-  doc.setFontSize(13);
+  const headerLabel=mode==='questions'?'QUESTIONS ONLY':'QUESTIONS + ANSWERS + EXPLANATIONS';
+  let headerSize=13;
+  while(doc.getStringUnitWidth(headerLabel)*headerSize/doc.internal.scaleFactor>contentW-20 && headerSize>9){ headerSize-=0.5; }
+  doc.setFontSize(headerSize);
   doc.setTextColor(...white);
-  doc.text(mode==='questions'?'QUESTIONS ONLY':'QUESTIONS + ANSWERS + EXPLANATIONS',margin+10,y+10);
+  doc.text(headerLabel,margin+10,y+10);
   doc.setFont('helvetica','normal');
   doc.setFontSize(8);
   doc.setTextColor(...dimGray);
@@ -1208,25 +1219,32 @@ async function downloadPDF(mode){
   // ── RENDER QUESTIONS ──
   verifiedData.forEach((q,qi)=>{
     // Question number + text
-    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-12,10);
-    const qBlockH=qLines.length*5.5+4;
+    const qTextIndent=10; const qRightPad=8;
+    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,10);
+    const qBlockH=qLines.length*5.8+5;
 
     // Estimate options height
+    const optIndent=15; const optRightPad=10;
     let optH=0;
     const optLines=q.options.map(o=>{
-      const lines=splitText(`${o.label}.  ${o.text}`,contentW-24,9);
-      optH+=lines.length*4.8+3;
+      const lines=splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,9);
+      optH+=lines.length*5+4;
       return lines;
     });
 
     // Estimate explanation height (mode=answers only)
+    const expIndent=14; const expRightPad=10;
     let expH=0; let expLines=[];
+    let tagH=0; let tagLines=[];
+    const tagIndent=10; const tagRightPad=10;
     if(mode==='answers'){
-      expLines=splitText(q.explanation,contentW-20,8.5);
-      expH=expLines.length*4.5+16;
+      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,8.5);
+      expH=expLines.length*4.8+17;
+      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,8);
+      tagH=tagLines.length*4.6+5;
     }
 
-    const totalNeeded=qBlockH+optH+expH+10;
+    const totalNeeded=qBlockH+optH+tagH+expH+12;
     checkY(totalNeeded);
 
     // Question block background
@@ -1240,7 +1258,7 @@ async function downloadPDF(mode){
     doc.setFontSize(10);
     doc.setTextColor(...white);
     qLines.forEach((line,li)=>{
-      doc.text(line,margin+8,y+6+li*5.5);
+      doc.text(line,margin+qTextIndent,y+6.5+li*5.8);
     });
     y+=qBlockH+5;
 
@@ -1263,7 +1281,7 @@ async function downloadPDF(mode){
       }
       doc.setFontSize(9);
       lines.forEach((line,li)=>{
-        doc.text(line,margin+13,y+4+li*4.8);
+        doc.text(line,margin+optIndent,y+4.5+li*5);
       });
       y+=optBlockH+1;
     });
@@ -1271,13 +1289,16 @@ async function downloadPDF(mode){
     // Answer tag (mode=answers)
     if(mode==='answers'){
       y+=2;
+      checkY(tagH+4);
       doc.setFillColor(20,50,30);
-      doc.roundedRect(margin+6,y,contentW-6,7,2,2,'F');
+      doc.roundedRect(margin+6,y,contentW-6,tagH,2,2,'F');
       doc.setFont('helvetica','bold');
       doc.setFontSize(8);
       doc.setTextColor(...green);
-      doc.text(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,margin+10,y+5);
-      y+=10;
+      tagLines.forEach((line,li)=>{
+        doc.text(line,margin+tagIndent,y+5+li*4.6);
+      });
+      y+=tagH+3;
 
       // Explanation box
       checkY(expH+4);
@@ -1288,12 +1309,12 @@ async function downloadPDF(mode){
       doc.setFont('helvetica','bold');
       doc.setFontSize(7);
       doc.setTextColor(...cyan);
-      doc.text('EXPLANATION',margin+12,y+6);
+      doc.text('EXPLANATION',margin+expIndent,y+6);
       doc.setFont('helvetica','normal');
       doc.setFontSize(8.5);
       doc.setTextColor(180,200,240);
       expLines.forEach((line,li)=>{
-        doc.text(line,margin+12,y+12+li*4.5);
+        doc.text(line,margin+expIndent,y+12+li*4.8);
       });
       y+=expH+4;
     }
