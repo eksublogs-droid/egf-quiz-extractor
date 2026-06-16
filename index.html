@@ -705,7 +705,7 @@ async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyId
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/${model.startsWith('gemini-1.5')?'v1':'v1beta'}/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
