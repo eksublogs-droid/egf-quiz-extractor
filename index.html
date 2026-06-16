@@ -648,7 +648,8 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL  = 'gemini-1.5-flash';
+const GEMINI_MODEL_VISION = 'gemini-2.0-flash';   // image extraction
+const GEMINI_MODEL_TEXT   = 'gemini-2.5-flash';   // answer verification & tiebreaker
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
@@ -685,7 +686,7 @@ function closeSettings(){ document.getElementById('settingsModal').classList.rem
 // ════════════════════════════════════════════════════════
 //  GEMINI API CALL WITH AUTO KEY ROTATION
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null){
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, model=GEMINI_MODEL_TEXT){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
   if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
@@ -699,13 +700,13 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
   };
   if(systemInstruction){
-    body.systemInstruction={parts:[{text:systemInstruction}]};
+    body.system_instruction={parts:[{text:systemInstruction}]};
   }
 
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
@@ -716,14 +717,14 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
       throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
-    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,model);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
     const msg=err?.error?.message||res.statusText;
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
-      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,model);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -948,7 +949,7 @@ Rules:
 - Questions with fewer than 4 options: include only what exists
 - YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
-    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
+    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.',0,null,GEMINI_MODEL_VISION);
 
     setProgress(30,'Parsing extraction results...');
     try{
@@ -1001,8 +1002,8 @@ ${questionsForVerification}`;
 
     const keys=getKeys();
     const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length),
-      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length)
+      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length,GEMINI_MODEL_TEXT),
+      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length,GEMINI_MODEL_TEXT)
     ]);
 
     setProgress(70,'Resolving conflicts...');
@@ -1046,7 +1047,7 @@ qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
 CONFLICTED QUESTIONS:
 ${conflictQuestions}`;
 
-      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null);
+      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null,0,null,GEMINI_MODEL_TEXT);
       try{
         const resolved=extractJSON(tiebreakText);
         resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
