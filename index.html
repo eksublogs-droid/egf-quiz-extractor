@@ -648,8 +648,7 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const MODEL_EXTRACT = 'gemini-1.5-flash';   // extraction: OCR work, generous quota
-const MODEL_ANSWER  = 'gemini-2.0-flash';   // answering:  needs best reasoning
+const GEMINI_MODEL  = 'gemini-1.5-flash-latest';
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
@@ -684,11 +683,12 @@ function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); document.getEle
 function closeSettings(){ document.getElementById('settingsModal').classList.remove('open') }
 
 // ════════════════════════════════════════════════════════
-//  GEMINI API CALL — model-aware + per-key rotation
+//  GEMINI API CALL WITH AUTO KEY ROTATION
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyIdx=null){
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
+  if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
 
   if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
   const keyIdx=(startKeyIdx+attempt)%keys.length;
@@ -705,30 +705,25 @@ async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyId
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/${model.startsWith('gemini-1.5')?'v1':'v1beta'}/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
 
-  // Quota / rate-limit → rotate key, retry same model
   if(res.status===429||res.status===503){
-    if(attempt>=keys.length-1){
-      // Signal caller that ALL keys are exhausted for this model
+    if(attempt>=keys.length*2-1){
       const err=await res.json().catch(()=>({}));
-      const quota=new Error(`QUOTA_EXHAUSTED:${model}`);
-      quota.geminiMsg=err?.error?.message||res.statusText;
-      throw quota;
+      throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
-    return geminiCall(parts,systemInstruction,model,attempt+1,startKeyIdx);
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
     const msg=err?.error?.message||res.statusText;
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
-      if(attempt>=keys.length-1) throw new Error('All API keys are invalid. Please check your keys.');
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
-      return geminiCall(parts,systemInstruction,model,attempt+1,startKeyIdx);
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -743,8 +738,9 @@ async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyId
     const {done,value}=await reader.read();
     if(done) break;
     buffer+=decoder.decode(value,{stream:true});
+    // SSE lines start with "data: "
     const lines=buffer.split('\n');
-    buffer=lines.pop();
+    buffer=lines.pop(); // keep incomplete last line
     for(const line of lines){
       if(!line.startsWith('data: ')) continue;
       const json=line.slice(6).trim();
@@ -754,8 +750,10 @@ async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyId
         const piece=chunk?.candidates?.[0]?.content?.parts?.[0]?.text||'';
         if(piece){
           fullText+=piece;
+          // Update progress label with live character count
           const label=document.getElementById('progressLabel');
           if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
+          // Yield to browser so UI actually paints on Android
           await new Promise(r=>setTimeout(r,0));
         }
       }catch(_){}
@@ -764,42 +762,6 @@ async function geminiCall(parts, systemInstruction, model, attempt=0, startKeyId
 
   if(!fullText) throw new Error('Empty response from Gemini. Try again.');
   return fullText;
-}
-
-// ════════════════════════════════════════════════════════
-//  SMART CALLER: tries primaryModel across all keys,
-//  then falls back to fallbackModel across all keys.
-//  If no fallback provided and all keys fail → throws.
-// ════════════════════════════════════════════════════════
-async function geminiCallSmart(parts, systemInstruction, primaryModel, fallbackModel=null, labelPrefix=''){
-  // Reset key rotation to start fresh for each smart call
-  const startIdx=currentKeyIndex;
-  try{
-    const result=await geminiCall(parts,systemInstruction,primaryModel,0,startIdx);
-    return result;
-  }catch(e){
-    if(e.message&&e.message.startsWith('QUOTA_EXHAUSTED:')){
-      // All keys exhausted on primaryModel
-      if(!fallbackModel){
-        throw new Error(`All keys quota-exhausted on ${primaryModel}. Please try again later or add more API keys.`);
-      }
-      // Show fallback notice in progress label
-      const label=document.getElementById('progressLabel');
-      if(label) label.textContent=`${labelPrefix}${primaryModel} quota hit — switching to ${fallbackModel}...`;
-      await new Promise(r=>setTimeout(r,800)); // brief pause so user sees the message
-      // Try fallbackModel across all keys
-      try{
-        const result=await geminiCall(parts,systemInstruction,fallbackModel,0,startIdx);
-        return result;
-      }catch(e2){
-        if(e2.message&&e2.message.startsWith('QUOTA_EXHAUSTED:')){
-          throw new Error(`All keys exhausted on both ${primaryModel} and ${fallbackModel}. Please add more API keys or wait for quota reset.`);
-        }
-        throw e2;
-      }
-    }
-    throw e;
-  }
 }
 
 // Robustly extract JSON from Gemini response regardless of wrapping
@@ -919,6 +881,750 @@ function fileToBase64(file){
       const dataUrl=canvas.toDataURL('image/jpeg',0.85);
       res(dataUrl.split(',')[1]);
     };
+    img.onerror=()=>rej(new Error('Failed to read '+file.name));
+    img.src=url;
+  });
+}
+
+// ════════════════════════════════════════════════════════
+//  PROGRESS HELPERS
+// ════════════════════════════════════════════════════════
+function setStep(n, state='active'){
+  for(let i=1;i<=4;i++){
+    const el=document.getElementById('step'+i);
+    el.className='step-item'+(i<n?' done':i===n?' '+state:'');
+  }
+}
+function setProgress(pct,label){
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('progressLabel').textContent=label;
+}
+
+// ════════════════════════════════════════════════════════
+//  MAIN PROCESSING
+// ════════════════════════════════════════════════════════
+async function startProcessing(){
+  if(!uploadedFiles.length){ toast('Upload at least one image first','error'); return; }
+  if(!getKeys().length){ openSettings(); toast('Add at least one Gemini API key first','error'); return; }
+
+  // Reset output
+  document.getElementById('outputArea').style.display='none';
+  document.getElementById('progressWrap').style.display='block';
+  document.getElementById('processBtn').disabled=true;
+  document.getElementById('actionBtns').querySelector('.btn-secondary').disabled=true;
+  // Reset course fields to locked/empty state
+  ['courseUniversity','courseFaculty','courseTitle','courseSemester','courseYear'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.value='';
+    el.disabled=true;
+  });
+  setProgress(0,'Preparing images...');
+  setStep(1,'active');
+
+  try{
+    // ── STEP 1: Convert all images to base64 in parallel ──
+    const base64Images=await Promise.all(uploadedFiles.map(fileToBase64));
+
+    setProgress(10,'Extracting questions & course info...');
+    setStep(1,'active');
+
+    // ── STEP 1: EXTRACTION CALL ──
+    const imageParts=base64Images.map((b64)=>({
+      inline_data:{mime_type:'image/jpeg',data:b64}
+    }));
+
+    const extractionPrompt=`Extract all exam questions and course info from this image.
+
+Output ONLY a raw JSON object. No text before it. No text after it. No markdown. No backticks. No explanation. Start your response with { and end with }.
+
+{"courseUniversity":"","courseFaculty":"","courseTitle":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
+
+Rules:
+- Copy every question exactly as written
+- Normalize options to labels A B C D
+- Use "" for any course field not found
+- courseTitle defaults to "Unknown Course" if missing
+- courseYear defaults to "Unknown Year" if missing
+- Questions with fewer than 4 options: include only what exists
+- YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
+
+    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
+
+    setProgress(30,'Parsing extraction results...');
+    try{
+      extracted=extractJSON(extractText);
+    }catch(e){
+      throw new Error('Failed to parse extraction response. Try again.');
+    }
+
+    if(!extracted.questions||!extracted.questions.length){
+      throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
+    }
+
+    // Pre-fill editable fields and enable them for editing
+    const uniInput=document.getElementById('courseUniversity');
+    const facInput=document.getElementById('courseFaculty');
+    const titleInput=document.getElementById('courseTitle');
+    const semInput=document.getElementById('courseSemester');
+    const yearInput=document.getElementById('courseYear');
+    uniInput.value=extracted.courseUniversity||'';
+    facInput.value=extracted.courseFaculty||'';
+    titleInput.value=extracted.courseTitle||'';
+    semInput.value=extracted.courseSemester||'';
+    yearInput.value=extracted.courseYear||'';
+    [uniInput,facInput,titleInput,semInput,yearInput].forEach(el=>el.disabled=false);
+
+    setProgress(35,'Verifying answers — Pass 1 & 2 (parallel)...');
+    setStep(2,'active');
+
+    // ── STEPS 3 & 4: ANSWER VERIFICATION PASS 1 & PASS 2 IN PARALLEL ──
+    const questionsForVerification=extracted.questions.map((q,i)=>{
+      const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+      return `Q${i+1}: ${q.question}\n${opts}`;
+    }).join('\n\n');
+
+    const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+    const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+    const keys=getKeys();
+    const [pass1Text,pass2Text]=await Promise.all([
+      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length),
+      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length)
+    ]);
+
+    setProgress(70,'Resolving conflicts...');
+    setStep(3,'active');
+    let pass1;
+    try{
+      pass1=extractJSON(pass1Text);
+    }catch(e){
+      throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+    }
+
+    let pass2;
+    try{
+      pass2=extractJSON(pass2Text);
+    }catch(e){
+      throw new Error('Failed to parse Pass 2 answer verification. Try again.');
+    }
+
+    setProgress(75,'Resolving conflicts...');
+    // ── STEP 3: CONFLICT RESOLUTION ──
+    const conflicts=[];
+    pass1.forEach((a1,idx)=>{
+      const a2=pass2.find(x=>x.qIndex===a1.qIndex);
+      if(a2&&a1.correctLabel!==a2.correctLabel) conflicts.push(a1.qIndex);
+    });
+
+    const finalAnswers=new Map();
+    pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
+
+    if(conflicts.length>0){
+      const conflictQuestions=conflicts.map(ci=>{
+        const q=extracted.questions[ci];
+        const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+        return `Q${ci+1} (index ${ci}): ${q.question}\n${opts}`;
+      }).join('\n\n');
+
+      const tiebreakPrompt=`Academic referee. Resolve conflicting MCQ answers. Return ONLY valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}]
+qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
+
+CONFLICTED QUESTIONS:
+${conflictQuestions}`;
+
+      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null);
+      try{
+        const resolved=extractJSON(tiebreakText);
+        resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
+      }catch(e){
+        // Keep pass1 answers if tiebreaker fails to parse
+      }
+    }
+
+    setProgress(88,'Generating outputs...');
+    setStep(4,'active');
+
+    // ── STEP 4: BUILD FINAL DATA ──
+    const finalUniversity=document.getElementById('courseUniversity').value||extracted.courseUniversity||'';
+    const finalFaculty=document.getElementById('courseFaculty').value||extracted.courseFaculty||'';
+    const finalTitle=document.getElementById('courseTitle').value||extracted.courseTitle||'Unknown Course';
+    const finalSemester=document.getElementById('courseSemester').value||extracted.courseSemester||'';
+    const finalYear=document.getElementById('courseYear').value||extracted.courseYear||'';
+
+    // Combined document title used across PDF header, PDF filename, and JSON title
+    const docTitleParts=[finalUniversity,finalFaculty,finalTitle,finalSemester,finalYear].filter(Boolean);
+    const docTitle=docTitleParts.join(' · ');
+
+    verifiedData=extracted.questions.map((q,i)=>{
+      const ans=finalAnswers.get(i)||{correctLabel:'A',correctText:q.options[0]?.text||'',explanation:'Answer not verified.'};
+      return{
+        question:q.question,
+        options:q.options,
+        correctLabel:ans.correctLabel,
+        correctText:ans.correctText,
+        explanation:ans.explanation,
+      };
+    });
+
+    extractedData={
+      questions:extracted.questions,
+      courseUniversity:finalUniversity,
+      courseFaculty:finalFaculty,
+      courseTitle:finalTitle,
+      courseSemester:finalSemester,
+      courseYear:finalYear,
+      docTitle,
+    };
+
+    // Build JSON
+    generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
+
+    // Render UI
+    renderSection1(verifiedData);
+    renderSection2(verifiedData);
+    document.getElementById('jsonOutput').textContent=JSON.stringify(generatedJSON,null,2);
+
+    setProgress(100,'Done!');
+    setStep(4,'done');
+
+    setTimeout(()=>{
+      document.getElementById('outputArea').style.display='block';
+      document.getElementById('outputArea').scrollIntoView({behavior:'smooth',block:'start'});
+      toast(`${verifiedData.length} questions extracted and verified successfully!`,'success');
+    },500);
+
+  }catch(err){
+    toast(err.message,'error');
+    document.getElementById('progressLabel').textContent='Error: '+err.message;
+    setProgress(0,'');
+  }finally{
+    document.getElementById('processBtn').disabled=false;
+    document.getElementById('actionBtns').querySelector('.btn-secondary').disabled=false;
+  }
+}
+
+// ════════════════════════════════════════════════════════
+//  JUMP NAV
+// ════════════════════════════════════════════════════════
+function jumpToSection(id){
+  const el=document.getElementById(id);
+  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER SECTIONS (with pagination)
+// ════════════════════════════════════════════════════════
+const QUESTIONS_PER_PAGE=8;
+let pageStateOnly=1;
+let pageStateAnswers=1;
+
+function renderSection1(questions,page=1){
+  pageStateOnly=page;
+  const ul=document.getElementById('qListOnly');
+  ul.innerHTML='';
+  const totalPages=Math.max(1,Math.ceil(questions.length/QUESTIONS_PER_PAGE));
+  const startIdx=(page-1)*QUESTIONS_PER_PAGE;
+  const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
+  pageItems.forEach((q,pi)=>{
+    const i=startIdx+pi;
+    const li=document.createElement('li'); li.className='q-item';
+    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
+        <div class="q-text">${escHtml(q.question)}</div>
+        <div class="q-options">${opts}</div>
+      </div>`;
+    ul.appendChild(li);
+  });
+  renderPager('pagerOnly',page,totalPages,(p)=>renderSection1(questions,p));
+}
+
+function renderSection2(questions,page=1){
+  pageStateAnswers=page;
+  const ul=document.getElementById('qListAnswers');
+  ul.innerHTML='';
+  const totalPages=Math.max(1,Math.ceil(questions.length/QUESTIONS_PER_PAGE));
+  const startIdx=(page-1)*QUESTIONS_PER_PAGE;
+  const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
+  pageItems.forEach((q,pi)=>{
+    const i=startIdx+pi;
+    const li=document.createElement('li'); li.className='q-item';
+    const opts=q.options.map(o=>{
+      const isCorrect=o.label===q.correctLabel;
+      return `<div class="q-opt${isCorrect?' correct-opt':''}">
+        <span class="opt-label">${o.label}.</span>
+        <span class="opt-text">${escHtml(o.text)}</span>
+      </div>`;
+    }).join('');
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
+        <div class="q-text">${escHtml(q.question)}</div>
+        <div class="q-options">${opts}</div>
+        <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
+        <div class="explanation-box">
+          <div class="exp-label">Explanation</div>
+          <p>${escHtml(q.explanation)}</p>
+        </div>
+      </div>`;
+    ul.appendChild(li);
+  });
+  renderPager('pagerAnswers',page,totalPages,(p)=>renderSection2(questions,p));
+}
+
+function renderPager(containerId,currentPage,totalPages,onChange){
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML='';
+  if(totalPages<=1) return;
+
+  const makeBtn=(label,disabled,onClick,extraClass='')=>{
+    const b=document.createElement('button');
+    b.className='pager-btn '+extraClass;
+    b.textContent=label;
+    b.disabled=disabled;
+    if(!disabled) b.onclick=onClick;
+    return b;
+  };
+
+  el.appendChild(makeBtn('‹ Prev',currentPage<=1,()=>{ onChange(currentPage-1); jumpToContainer(containerId); },'pager-arrow'));
+
+  // Page number buttons (show all if few, else windowed around current)
+  const maxButtons=7;
+  let pages=[];
+  if(totalPages<=maxButtons){
+    pages=Array.from({length:totalPages},(_,i)=>i+1);
+  } else {
+    pages=[1];
+    let start=Math.max(2,currentPage-1);
+    let end=Math.min(totalPages-1,currentPage+1);
+    if(start>2) pages.push('…');
+    for(let p=start;p<=end;p++) pages.push(p);
+    if(end<totalPages-1) pages.push('…');
+    pages.push(totalPages);
+  }
+  pages.forEach(p=>{
+    if(p==='…'){
+      const span=document.createElement('span');
+      span.className='pager-btn';
+      span.style.cursor='default';
+      span.style.opacity='.5';
+      span.textContent='…';
+      el.appendChild(span);
+    } else {
+      const isActive=p===currentPage;
+      el.appendChild(makeBtn(String(p),false,()=>{ onChange(p); jumpToContainer(containerId); },isActive?'active':''));
+    }
+  });
+
+  el.appendChild(makeBtn('Next ›',currentPage>=totalPages,()=>{ onChange(currentPage+1); jumpToContainer(containerId); },'pager-arrow'));
+}
+
+function jumpToContainer(pagerId){
+  // Scroll the parent section-body into view so user lands at top of the new page's results
+  const pagerEl=document.getElementById(pagerId);
+  const sectionBody=pagerEl?.closest('.section-body');
+  if(sectionBody) sectionBody.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+// ════════════════════════════════════════════════════════
+//  BUILD JSON (EduGlobalForge format)
+// ════════════════════════════════════════════════════════
+function buildJSON(questions, courseTitle, courseYear){
+  const slug=buildSlug(courseTitle,courseYear);
+  const now=new Date().toISOString().replace('T',' ').substring(0,19);
+  let globalId=1; let globalAnswerId=1;
+
+  return questions.map(q=>{
+    const qId=String(globalId++);
+    const answers=q.options.map((opt,oi)=>{
+      const isCorrect=opt.label===q.correctLabel;
+      return{
+        id:String(globalAnswerId++),
+        question_id:qId,
+        answer:opt.text,
+        image:null,
+        correct:isCorrect?"1":"0",
+        ordering:String(oi+1),
+        weight:"0",
+        keyword:null,
+        placeholder:null,
+      };
+    });
+    return{
+      id:qId,
+      author_id:"5",
+      tag_id:null,
+      question:q.question,
+      question_title:"",
+      question_image:"",
+      wrong_answer_text:null,
+      right_answer_text:null,
+      question_hint:null,
+      explanation:"",
+      user_explanation:null,
+      type:"radio",
+      published:"1",
+      create_date:now,
+      not_influence_to_score:null,
+      weight:"1",
+      options:"",
+      tag_title:null,
+      category:slug,
+      answers,
+    };
+  });
+}
+
+function buildSlug(title,year){
+  const t=(title||'unknown').toLowerCase()
+    .replace(/[^a-z0-9\s]/g,'').trim()
+    .replace(/\s+/g,'-');
+  const y=(year||'').replace(/\s/g,'');
+  return y ? `${t}-${y}` : t;
+}
+
+// ════════════════════════════════════════════════════════
+//  PDF GENERATION
+// ════════════════════════════════════════════════════════
+async function downloadPDF(mode){
+  if(!verifiedData){ toast('No data yet — run extraction first','error'); return; }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+
+  const university=extractedData?.courseUniversity||'';
+  const faculty=extractedData?.courseFaculty||'';
+  const title=extractedData?.courseTitle||'Quiz';
+  const semester=extractedData?.courseSemester||'';
+  const year=extractedData?.courseYear||'';
+  const docTitle=extractedData?.docTitle||title;
+  const pageW=210; const pageH=297;
+  const margin=18; const contentW=pageW-margin*2;
+
+  // ── Colors ──
+  const navy=[10,15,30];
+  const blue=[45,126,255];
+  const cyan=[0,212,255];
+  const white=[240,244,255];
+  const dimGray=[138,153,187];
+  const green=[34,197,94];
+  const lightBlueBg=[15,23,42];
+
+  let y=0; let pageNum=1;
+
+  function addPage(){
+    drawFooter();
+    doc.addPage();
+    pageNum++;
+    y=drawPageHeader();
+    drawWatermark();
+  }
+
+  function drawWatermark(){
+    doc.saveGraphicsState();
+    doc.setGState(new doc.GState({opacity:0.06}));
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(13);
+    doc.setTextColor(120,150,210);
+    // Dense diagonal tiling — repeats well over 100 times per page
+    for(let wy=-10;wy<320;wy+=14){
+      for(let wx=-20;wx<240;wx+=38){
+        doc.text('Eduglobalforge',wx,wy,{angle:30});
+      }
+    }
+    doc.restoreGraphicsState();
+  }
+
+  function drawPageHeader(){
+    // Top banner
+    doc.setFillColor(...navy);
+    doc.rect(0,0,pageW,22,'F');
+    // Blue accent line
+    doc.setFillColor(...blue);
+    doc.rect(0,21,pageW,1.5,'F');
+    // Logo text
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...cyan);
+    doc.text('EDUGLOBALFORGE',margin,8);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...dimGray);
+    doc.text('Quiz Extractor · AI-Powered',margin,13.5);
+    // Page number
+    doc.setFontSize(7);
+    doc.setTextColor(...dimGray);
+    doc.text(`Page ${pageNum}`,pageW-margin,13.5,{align:'right'});
+    // Course info
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...dimGray);
+    const courseInfoMaxW=pageW-margin*2-70;
+    let courseInfo=docTitle;
+    while(doc.getStringUnitWidth(courseInfo)*7.5/doc.internal.scaleFactor>courseInfoMaxW && courseInfo.length>10){
+      courseInfo=courseInfo.slice(0,-1);
+    }
+    if(courseInfo!==docTitle) courseInfo=courseInfo.trim()+'…';
+    doc.text(courseInfo,pageW/2,13.5,{align:'center'});
+    return 30;
+  }
+
+  function drawFooter(){
+    doc.setFillColor(...navy);
+    doc.rect(0,pageH-12,pageW,12,'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...dimGray);
+    doc.text('Generated by EduGlobalForge Quiz Extractor · AI-Verified',pageW/2,pageH-4.5,{align:'center'});
+  }
+
+  function checkY(needed){
+    if(y+needed>pageH-18){ addPage(); }
+  }
+
+  function splitText(text,maxW,fontSize){
+    doc.setFontSize(fontSize);
+    return doc.splitTextToSize(text,maxW);
+  }
+
+  // ── TITLE PAGE SECTION ──
+  y=drawPageHeader();
+  drawWatermark();
+
+  // Cover info block — university / faculty / course / semester / year, each on its own line if present
+  const coverLines=[];
+  if(university) coverLines.push({text:university,size:11,bold:true,color:white});
+  if(faculty)    coverLines.push({text:faculty,size:9,bold:false,color:dimGray});
+  const courseLine=[title,semester,year].filter(Boolean).join(' · ');
+  if(courseLine) coverLines.push({text:courseLine,size:9,bold:true,color:[120,180,255]});
+
+  if(coverLines.length){
+    const coverPadTop=8; const coverLineGap=6.5; const coverPadBottom=6;
+    // Pre-wrap all lines first so we can compute exact box height
+    let wrappedCoverLines=[];
+    coverLines.forEach(line=>{
+      doc.setFont('helvetica',line.bold?'bold':'normal');
+      const wrapped=splitText(line.text,contentW-22,line.size);
+      wrapped.forEach(wl=>wrappedCoverLines.push({text:wl,size:line.size,bold:line.bold,color:line.color}));
+    });
+    const coverH=coverPadTop+wrappedCoverLines.length*coverLineGap+coverPadBottom;
+    doc.setFillColor(...lightBlueBg);
+    doc.roundedRect(margin,y,contentW,coverH,3,3,'F');
+    doc.setFillColor(...cyan);
+    doc.roundedRect(margin,y,4,coverH,2,2,'F');
+    wrappedCoverLines.forEach((line,li)=>{
+      doc.setFont('helvetica',line.bold?'bold':'normal');
+      doc.setFontSize(line.size);
+      doc.setTextColor(...line.color);
+      doc.text(line.text,margin+12,y+coverPadTop+li*coverLineGap);
+    });
+    y+=coverH+8;
+  }
+
+  // Section title box
+  doc.setFillColor(...lightBlueBg);
+  doc.roundedRect(margin,y,contentW,24,3,3,'F');
+  doc.setFillColor(...blue);
+  doc.roundedRect(margin,y,4,24,2,2,'F');
+  doc.setFont('helvetica','bold');
+  const headerLabel=mode==='questions'?'QUESTIONS ONLY':'QUESTIONS + ANSWERS + EXPLANATIONS';
+  let headerSize=13;
+  while(doc.getStringUnitWidth(headerLabel)*headerSize/doc.internal.scaleFactor>contentW-20 && headerSize>9){ headerSize-=0.5; }
+  doc.setFontSize(headerSize);
+  doc.setTextColor(...white);
+  doc.text(headerLabel,margin+10,y+10);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...dimGray);
+  doc.text(`${verifiedData.length} Questions · ${title}${year?' · '+year:''}`,margin+10,y+18);
+  y+=32;
+
+  // ── RENDER QUESTIONS ──
+  verifiedData.forEach((q,qi)=>{
+    // Question number + text
+    const qTextIndent=10; const qRightPad=8;
+    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,10);
+    const qBlockH=qLines.length*5.8+5;
+
+    // Estimate options height
+    const optIndent=15; const optRightPad=10;
+    let optH=0;
+    const optLines=q.options.map(o=>{
+      const lines=splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,9);
+      optH+=lines.length*5+4;
+      return lines;
+    });
+
+    // Estimate explanation height (mode=answers only)
+    const expIndent=14; const expRightPad=10;
+    let expH=0; let expLines=[];
+    let tagH=0; let tagLines=[];
+    const tagIndent=10; const tagRightPad=10;
+    if(mode==='answers'){
+      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,8.5);
+      expH=expLines.length*4.8+17;
+      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,8);
+      tagH=tagLines.length*4.6+5;
+    }
+
+    const totalNeeded=qBlockH+optH+tagH+expH+12;
+    checkY(totalNeeded);
+
+    // Question block background
+    doc.setFillColor(15,25,50);
+    doc.roundedRect(margin,y,contentW,qBlockH+2,2,2,'F');
+    // Blue left bar
+    doc.setFillColor(...blue);
+    doc.roundedRect(margin,y,3,qBlockH+2,1,1,'F');
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...white);
+    qLines.forEach((line,li)=>{
+      doc.text(line,margin+qTextIndent,y+6.5+li*5.8);
+    });
+    y+=qBlockH+5;
+
+    // Options
+    q.options.forEach((opt,oi)=>{
+      const isCorrect=mode==='answers'&&opt.label===q.correctLabel;
+      const lines=optLines[oi];
+      const optBlockH=lines.length*4.8+4;
+
+      if(isCorrect){
+        doc.setFillColor(20,60,30);
+        doc.roundedRect(margin+6,y-1,contentW-6,optBlockH,1.5,1.5,'F');
+        doc.setFillColor(...green);
+        doc.roundedRect(margin+6,y-1,2.5,optBlockH,1,1,'F');
+        doc.setFont('helvetica','bold');
+        doc.setTextColor(...green);
+      } else {
+        doc.setFont('helvetica','normal');
+        doc.setTextColor(...dimGray);
+      }
+      doc.setFontSize(9);
+      lines.forEach((line,li)=>{
+        doc.text(line,margin+optIndent,y+4.5+li*5);
+      });
+      y+=optBlockH+1;
+    });
+
+    // Answer tag (mode=answers)
+    if(mode==='answers'){
+      y+=2;
+      checkY(tagH+4);
+      doc.setFillColor(20,50,30);
+      doc.roundedRect(margin+6,y,contentW-6,tagH,2,2,'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(8);
+      doc.setTextColor(...green);
+      tagLines.forEach((line,li)=>{
+        doc.text(line,margin+tagIndent,y+5+li*4.6);
+      });
+      y+=tagH+3;
+
+      // Explanation box
+      checkY(expH+4);
+      doc.setFillColor(10,20,50);
+      doc.roundedRect(margin+6,y,contentW-6,expH,2,2,'F');
+      doc.setFillColor(...cyan);
+      doc.roundedRect(margin+6,y,2.5,expH,1,1,'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(7);
+      doc.setTextColor(...cyan);
+      doc.text('EXPLANATION',margin+expIndent,y+6);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(180,200,240);
+      expLines.forEach((line,li)=>{
+        doc.text(line,margin+expIndent,y+12+li*4.8);
+      });
+      y+=expH+4;
+    }
+
+    y+=8; // gap between questions
+    checkY(0);
+  });
+
+  // ── FOOTER ON LAST PAGE ──
+  drawFooter();
+  // Footer on all pages (go back and add)
+  // Actually jsPDF doesn't support "all pages" easily without tracking — handled per page via addPage override
+  // Add footer to first page too
+  // We call drawFooter after each page is complete
+
+  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
+  const fname=mode==='questions'
+    ?`${fnameBase}_Questions.pdf`
+    :`${fnameBase}_QA.pdf`;
+  doc.save(fname);
+  toast(`PDF downloaded: ${fname}`,'success');
+}
+
+// ════════════════════════════════════════════════════════
+//  JSON COPY / DOWNLOAD
+// ════════════════════════════════════════════════════════
+function copyJSON(){
+  if(!generatedJSON){ toast('No JSON yet — run extraction first','error'); return; }
+  navigator.clipboard.writeText(JSON.stringify(generatedJSON,null,2))
+    .then(()=>toast('JSON copied to clipboard','success'))
+    .catch(()=>toast('Copy failed — try the download button','error'));
+}
+function downloadJSON(){
+  if(!generatedJSON){ toast('No JSON yet — run extraction first','error'); return; }
+  const docTitle=extractedData?.docTitle||extractedData?.courseTitle||'quiz';
+  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
+  const blob=new Blob([JSON.stringify(generatedJSON,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`${fnameBase}_quiz.json`;
+  a.click();
+  toast('JSON downloaded','success');
+}
+
+// ════════════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════════════
+let toastTimer;
+function toast(msg,type='info'){
+  const el=document.getElementById('toast');
+  el.className='show '+(type||'info');
+  document.getElementById('toastMsg').textContent=msg;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ el.className=el.className.replace('show','').trim() },4000);
+}
+
+// ════════════════════════════════════════════════════════
+//  CLOSE MODAL ON OVERLAY CLICK
+// ════════════════════════════════════════════════════════
+document.getElementById('settingsModal').addEventListener('click',function(e){
+  if(e.target===this) closeSettings();
+});
+
+// ════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════
+updateKeyStatus();
+</script>
+</body>
+</html>
+
     img.onerror=()=>rej(new Error('Failed to read '+file.name));
     img.src=url;
   });
