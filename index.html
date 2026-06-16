@@ -872,12 +872,19 @@ async function startProcessing(){
       inline_data:{mime_type:mimeTypes[i],data:b64}
     }));
 
-    const extractionPrompt=`Parse this exam image. Return ONLY valid JSON, no markdown, no explanation.
-{
-  "courseUniversity":"","courseFaculty":"","courseTitle":"","courseSemester":"","courseYear":"",
-  "questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]
-}
-Rules: Extract every question exactly as written. Normalize option labels to A B C D. If a field is not found use "". courseTitle default "Unknown Course". courseYear default "Unknown Year". Return ONLY the JSON.`;
+    const extractionPrompt=`You are an exam document parser. Analyze the image and extract all questions and course info.
+
+Return ONLY this JSON structure with no markdown, no backticks, no explanation:
+{"courseUniversity":"","courseFaculty":"","courseTitle":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
+
+RULES:
+- Extract every question exactly as written
+- Normalize all option labels to A, B, C, D
+- Include only options that exist (some questions may have fewer than 4)
+- courseUniversity/courseFaculty/courseSemester: use "" if not found
+- courseTitle: use "Unknown Course" if not found
+- courseYear: use "Unknown Year" if not found
+- Return ONLY the JSON. Nothing else.`;
 
     const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],null);
 
