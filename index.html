@@ -696,7 +696,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096,responseMimeType:'application/json'},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -752,7 +752,9 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
           fullText+=piece;
           // Update progress label with live character count
           const label=document.getElementById('progressLabel');
-          if(label) label.textContent=`Receiving response... (${fullText.length} chars)`;
+          if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
+          // Yield to browser so UI actually paints on Android
+          await new Promise(r=>setTimeout(r,0));
         }
       }catch(_){}
     }
@@ -765,23 +767,36 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 // Robustly extract JSON from Gemini response regardless of wrapping
 function extractJSON(text){
   if(!text) throw new Error('Empty response');
-  // Strip markdown fences
+
+  // 1. Strip all markdown fences
   let s=text.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
-  // Try direct parse first
+
+  // 2. Direct parse
   try{ return JSON.parse(s); }catch(_){}
-  // Find first { or [ and last matching } or ]
-  const firstObj=s.indexOf('{'); const firstArr=s.indexOf('[');
-  let start=-1; let endChar='';
-  if(firstObj===-1&&firstArr===-1) throw new Error('No JSON found');
-  if(firstObj===-1||(firstArr!==-1&&firstArr<firstObj)){ start=firstArr; endChar=']'; }
-  else { start=firstObj; endChar='}'; }
-  const end=s.lastIndexOf(endChar);
-  if(end===-1||end<start) throw new Error('No JSON found');
-  const candidate=s.slice(start,end+1);
-  try{ return JSON.parse(candidate); }catch(_){}
-  // Last resort: try to fix common issues like trailing commas
-  const fixed=candidate.replace(/,\s*([}\]])/g,'$1').replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
-  return JSON.parse(fixed);
+
+  // 3. Find outermost { ... } (object)
+  const o1=s.indexOf('{'); const o2=s.lastIndexOf('}');
+  if(o1!==-1&&o2>o1){
+    try{ return JSON.parse(s.slice(o1,o2+1)); }catch(_){}
+  }
+
+  // 4. Find outermost [ ... ] (array)
+  const a1=s.indexOf('['); const a2=s.lastIndexOf(']');
+  if(a1!==-1&&a2>a1){
+    try{ return JSON.parse(s.slice(a1,a2+1)); }catch(_){}
+  }
+
+  // 5. Fix trailing commas and unquoted keys then retry object
+  if(o1!==-1&&o2>o1){
+    try{
+      const fixed=s.slice(o1,o2+1)
+        .replace(/,\s*([}\]])/g,'$1')
+        .replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
+      return JSON.parse(fixed);
+    }catch(_){}
+  }
+
+  throw new Error('Could not extract JSON from response');
 }
 
 
@@ -844,14 +859,30 @@ function clearAll(){
 }
 
 // ════════════════════════════════════════════════════════
-//  FILE → BASE64
+//  FILE → COMPRESSED BASE64
 // ════════════════════════════════════════════════════════
 function fileToBase64(file){
   return new Promise((res,rej)=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result.split(',')[1]);
-    r.onerror=()=>rej(new Error('Failed to read '+file.name));
-    r.readAsDataURL(file);
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      // Resize to max 1024px on longest side
+      const MAX=1024;
+      let w=img.width; let h=img.height;
+      if(w>MAX||h>MAX){
+        if(w>h){ h=Math.round(h*MAX/w); w=MAX; }
+        else { w=Math.round(w*MAX/h); h=MAX; }
+      }
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      // JPEG at 85% quality — readable text, small size
+      const dataUrl=canvas.toDataURL('image/jpeg',0.85);
+      res(dataUrl.split(',')[1]);
+    };
+    img.onerror=()=>rej(new Error('Failed to read '+file.name));
+    img.src=url;
   });
 }
 
@@ -893,31 +924,31 @@ async function startProcessing(){
   try{
     // ── STEP 1: Convert all images to base64 in parallel ──
     const base64Images=await Promise.all(uploadedFiles.map(fileToBase64));
-    const mimeTypes=uploadedFiles.map(f=>f.type);
 
     setProgress(10,'Extracting questions & course info...');
     setStep(1,'active');
 
     // ── STEP 1: EXTRACTION CALL ──
-    const imageParts=base64Images.map((b64,i)=>({
-      inline_data:{mime_type:mimeTypes[i],data:b64}
+    const imageParts=base64Images.map((b64)=>({
+      inline_data:{mime_type:'image/jpeg',data:b64}
     }));
 
-    const extractionPrompt=`You are an exam document parser. Analyze the image and extract all questions and course info.
+    const extractionPrompt=`Extract all exam questions and course info from this image.
 
-Return ONLY this JSON structure with no markdown, no backticks, no explanation:
+Output ONLY a raw JSON object. No text before it. No text after it. No markdown. No backticks. No explanation. Start your response with { and end with }.
+
 {"courseUniversity":"","courseFaculty":"","courseTitle":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
 
-RULES:
-- Extract every question exactly as written
-- Normalize all option labels to A, B, C, D
-- Include only options that exist (some questions may have fewer than 4)
-- courseUniversity/courseFaculty/courseSemester: use "" if not found
-- courseTitle: use "Unknown Course" if not found
-- courseYear: use "Unknown Year" if not found
-- Return ONLY the JSON. Nothing else.`;
+Rules:
+- Copy every question exactly as written
+- Normalize options to labels A B C D
+- Use "" for any course field not found
+- courseTitle defaults to "Unknown Course" if missing
+- courseYear defaults to "Unknown Year" if missing
+- Questions with fewer than 4 options: include only what exists
+- YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
-    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],null);
+    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
 
     setProgress(30,'Parsing extraction results...');
     try{
