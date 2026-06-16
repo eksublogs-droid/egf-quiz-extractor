@@ -566,7 +566,7 @@ let extractedData   = null; // { questions, courseTitle, courseYear }
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL  = 'gemini-flash-latest';
+const GEMINI_MODEL  = 'gemini-2.0-flash-latest';
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
@@ -628,6 +628,12 @@ async function geminiCall(parts, systemInstruction, attempt=0){
   }catch(e){ throw new Error('Network error: '+e.message) }
 
   if(res.status===429||res.status===503){
+    console.warn(`Key ${keyIdx} failed with status ${res.status} on attempt ${attempt}`);
+    if(attempt>=keys.length*2-1){
+      const err=await res.json().catch(()=>({}));
+      const msg=err?.error?.message||res.statusText;
+      throw new Error(`Gemini error (${res.status}): ${msg}`);
+    }
     // Rotate to next key silently
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
     return geminiCall(parts,systemInstruction,attempt+1);
