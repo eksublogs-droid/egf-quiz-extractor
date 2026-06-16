@@ -358,6 +358,51 @@
   /* ── DIVIDER ────────────────────────────────────────── */
   .divider{height:1px;background:var(--white-faint);margin:32px 0}
 
+  /* ── JUMP NAV ───────────────────────────────────────── */
+  .jump-nav{
+    position:sticky;top:0;z-index:50;
+    display:flex;gap:8px;flex-wrap:wrap;
+    background:rgba(10,15,30,.92);backdrop-filter:blur(8px);
+    border:1px solid var(--white-faint);border-radius:var(--radius-sm);
+    padding:10px 12px;margin-bottom:20px;
+  }
+  .jump-btn{
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:999px;
+    padding:7px 14px;font-size:12.5px;font-family:var(--font-main);font-weight:600;
+    cursor:pointer;transition:var(--transition);white-space:nowrap;
+  }
+  .jump-btn:hover{border-color:var(--blue);color:var(--white);background:var(--blue-glow)}
+  .jump-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .s1dot{background:var(--blue)}
+  .s2dot{background:var(--cyan)}
+  .s3dot{background:var(--gold)}
+  @media(max-width:600px){
+    .jump-nav{gap:6px;padding:8px}
+    .jump-btn{padding:6px 11px;font-size:11.5px}
+  }
+
+  /* ── PAGINATION ─────────────────────────────────────── */
+  .pager{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    flex-wrap:wrap;margin-top:20px;padding-top:18px;
+    border-top:1px solid var(--white-faint);
+  }
+  .pager:empty{display:none}
+  .pager-btn{
+    min-width:34px;height:34px;padding:0 10px;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:var(--radius-sm);
+    font-family:var(--font-mono);font-size:13px;font-weight:600;
+    cursor:pointer;transition:var(--transition);
+  }
+  .pager-btn:hover:not(:disabled){border-color:var(--blue);color:var(--white)}
+  .pager-btn:disabled{opacity:.35;cursor:not-allowed}
+  .pager-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .pager-arrow{font-size:15px}
+
   /* ── EMPTY STATE ────────────────────────────────────── */
   .empty-info{
     text-align:center;padding:32px;
@@ -430,9 +475,25 @@
     <div style="margin-top:20px;display:none" id="metaFields">
       <div class="field-row">
         <div class="field-group">
+          <label>University Name</label>
+          <input type="text" id="courseUniversity" placeholder="e.g. Ekiti State University"/>
+        </div>
+        <div class="field-group">
+          <label>Faculty</label>
+          <input type="text" id="courseFaculty" placeholder="e.g. Faculty of Science"/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
           <label>Course Name / Title</label>
           <input type="text" id="courseTitle" placeholder="e.g. GST 116 — Entrepreneurship"/>
         </div>
+        <div class="field-group">
+          <label>Semester</label>
+          <input type="text" id="courseSemester" placeholder="e.g. First Semester"/>
+        </div>
+      </div>
+      <div class="field-row">
         <div class="field-group">
           <label>Year / Session</label>
           <input type="text" id="courseYear" placeholder="e.g. 2016/17"/>
@@ -469,7 +530,21 @@
   <div id="outputArea" style="display:none">
     <div class="divider"></div>
 
+    <!-- JUMP NAV -->
+    <div id="jumpNav" class="jump-nav">
+      <button class="jump-btn" onclick="jumpToSection('sectionQuestions')">
+        <span class="jump-dot s1dot"></span> Questions Only
+      </button>
+      <button class="jump-btn" onclick="jumpToSection('sectionAnswers')">
+        <span class="jump-dot s2dot"></span> Answers + Explanations
+      </button>
+      <button class="jump-btn" onclick="jumpToSection('sectionJSON')">
+        <span class="jump-dot s3dot"></span> JSON Export
+      </button>
+    </div>
+
     <!-- SECTION 1: Questions Only -->
+    <div id="sectionQuestions">
     <div class="section-header s1">
       <div>
         <div class="section-badge"><div class="badge-num">1</div> Questions Only</div>
@@ -482,9 +557,12 @@
     </div>
     <div class="section-body">
       <ul class="q-list" id="qListOnly"></ul>
+      <div class="pager" id="pagerOnly"></div>
+    </div>
     </div>
 
     <!-- SECTION 2: Questions + Answers + Explanations -->
+    <div id="sectionAnswers">
     <div class="section-header s2">
       <div>
         <div class="section-badge"><div class="badge-num">2</div> Questions + Answers + Explanations</div>
@@ -497,9 +575,12 @@
     </div>
     <div class="section-body">
       <ul class="q-list" id="qListAnswers"></ul>
+      <div class="pager" id="pagerAnswers"></div>
+    </div>
     </div>
 
     <!-- SECTION 3: JSON -->
+    <div id="sectionJSON">
     <div class="section-header s3">
       <div>
         <div class="section-badge"><div class="badge-num">3</div> JSON Export</div>
@@ -518,6 +599,7 @@
     </div>
     <div class="section-body">
       <pre id="jsonOutput"></pre>
+    </div>
     </div>
 
   </div><!-- /outputArea -->
@@ -564,7 +646,7 @@
 //  STATE
 // ════════════════════════════════════════════════════════
 let uploadedFiles   = [];   // File objects
-let extractedData   = null; // { questions, courseTitle, courseYear }
+let extractedData   = null; // { questions, courseUniversity, courseFaculty, courseTitle, courseSemester, courseYear, docTitle }
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
@@ -705,7 +787,10 @@ function clearAll(){
   document.getElementById('progressWrap').style.display='none';
   setProgress(0,'');
   document.getElementById('outputArea').style.display='none';
+  document.getElementById('courseUniversity').value='';
+  document.getElementById('courseFaculty').value='';
   document.getElementById('courseTitle').value='';
+  document.getElementById('courseSemester').value='';
   document.getElementById('courseYear').value='';
   document.getElementById('fileInput').value='';
 }
@@ -769,12 +854,18 @@ async function startProcessing(){
 Extract EVERY question you can find across all images. Be thorough — do not miss any question.
 
 Also detect:
+- The university or institution name (look for headers, logos, letterheads)
+- The faculty or department name (e.g. "Faculty of Science", "Department of Physics")
 - The course name/title (look for headers, footers, watermarks, course codes)
-- The academic year or session (e.g. "2016/2017", "2023/24", "First Semester 2022")
+- The semester (e.g. "First Semester", "Second Semester", "Harmattan Semester")
+- The academic year or session (e.g. "2016/2017", "2023/24")
 
 Return ONLY a valid JSON object with this exact structure:
 {
+  "courseUniversity": "FULL UNIVERSITY NAME HERE",
+  "courseFaculty": "FACULTY/DEPARTMENT NAME HERE",
   "courseTitle": "FULL COURSE NAME HERE",
+  "courseSemester": "SEMESTER HERE",
   "courseYear": "YEAR/SESSION HERE",
   "questions": [
     {
@@ -793,7 +884,10 @@ CRITICAL RULES:
 - Extract text with 100% precision. Copy every word exactly as it appears.
 - If options use letters (A, B, C, D) or numbers (1, 2, 3, 4) or (a, b, c, d), normalize to A, B, C, D.
 - If a question has fewer than 4 options, include only what exists.
+- If university is not found, use "".
+- If faculty is not found, use "".
 - If course title is not found, use "Unknown Course".
+- If semester is not found, use "".
 - If year is not found, use "Unknown Year".
 - Return ONLY the JSON. No markdown, no backticks, no explanation.`;
 
@@ -815,9 +909,15 @@ CRITICAL RULES:
     }
 
     // Pre-fill editable fields
+    const uniInput=document.getElementById('courseUniversity');
+    const facInput=document.getElementById('courseFaculty');
     const titleInput=document.getElementById('courseTitle');
+    const semInput=document.getElementById('courseSemester');
     const yearInput=document.getElementById('courseYear');
+    if(!uniInput.value)  uniInput.value=extracted.courseUniversity||'';
+    if(!facInput.value)  facInput.value=extracted.courseFaculty||'';
     if(!titleInput.value) titleInput.value=extracted.courseTitle||'';
+    if(!semInput.value)  semInput.value=extracted.courseSemester||'';
     if(!yearInput.value)  yearInput.value=extracted.courseYear||'';
 
     setProgress(40,'Verifying answers — Pass 1...');
@@ -948,8 +1048,15 @@ Return ONLY the JSON array. No markdown, no backticks.`;
     setStep(6,'active');
 
     // ── STEP 6: BUILD FINAL DATA ──
+    const finalUniversity=document.getElementById('courseUniversity').value||extracted.courseUniversity||'';
+    const finalFaculty=document.getElementById('courseFaculty').value||extracted.courseFaculty||'';
     const finalTitle=document.getElementById('courseTitle').value||extracted.courseTitle||'Unknown Course';
+    const finalSemester=document.getElementById('courseSemester').value||extracted.courseSemester||'';
     const finalYear=document.getElementById('courseYear').value||extracted.courseYear||'';
+
+    // Combined document title used across PDF header, PDF filename, and JSON title
+    const docTitleParts=[finalUniversity,finalFaculty,finalTitle,finalSemester,finalYear].filter(Boolean);
+    const docTitle=docTitleParts.join(' · ');
 
     verifiedData=extracted.questions.map((q,i)=>{
       const ans=finalAnswers.get(i)||{correctLabel:'A',correctText:q.options[0]?.text||'',explanation:'Answer not verified.'};
@@ -962,10 +1069,18 @@ Return ONLY the JSON array. No markdown, no backticks.`;
       };
     });
 
-    extractedData={questions:extracted.questions,courseTitle:finalTitle,courseYear:finalYear};
+    extractedData={
+      questions:extracted.questions,
+      courseUniversity:finalUniversity,
+      courseFaculty:finalFaculty,
+      courseTitle:finalTitle,
+      courseSemester:finalSemester,
+      courseYear:finalYear,
+      docTitle,
+    };
 
     // Build JSON
-    generatedJSON=buildJSON(verifiedData,finalTitle,finalYear);
+    generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
 
     // Render UI
     renderSection1(verifiedData);
@@ -992,12 +1107,29 @@ Return ONLY the JSON array. No markdown, no backticks.`;
 }
 
 // ════════════════════════════════════════════════════════
-//  RENDER SECTIONS
+//  JUMP NAV
 // ════════════════════════════════════════════════════════
-function renderSection1(questions){
+function jumpToSection(id){
+  const el=document.getElementById(id);
+  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER SECTIONS (with pagination)
+// ════════════════════════════════════════════════════════
+const QUESTIONS_PER_PAGE=8;
+let pageStateOnly=1;
+let pageStateAnswers=1;
+
+function renderSection1(questions,page=1){
+  pageStateOnly=page;
   const ul=document.getElementById('qListOnly');
   ul.innerHTML='';
-  questions.forEach((q,i)=>{
+  const totalPages=Math.max(1,Math.ceil(questions.length/QUESTIONS_PER_PAGE));
+  const startIdx=(page-1)*QUESTIONS_PER_PAGE;
+  const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
+  pageItems.forEach((q,pi)=>{
+    const i=startIdx+pi;
     const li=document.createElement('li'); li.className='q-item';
     const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
     li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
@@ -1007,12 +1139,18 @@ function renderSection1(questions){
       </div>`;
     ul.appendChild(li);
   });
+  renderPager('pagerOnly',page,totalPages,(p)=>renderSection1(questions,p));
 }
 
-function renderSection2(questions){
+function renderSection2(questions,page=1){
+  pageStateAnswers=page;
   const ul=document.getElementById('qListAnswers');
   ul.innerHTML='';
-  questions.forEach((q,i)=>{
+  const totalPages=Math.max(1,Math.ceil(questions.length/QUESTIONS_PER_PAGE));
+  const startIdx=(page-1)*QUESTIONS_PER_PAGE;
+  const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
+  pageItems.forEach((q,pi)=>{
+    const i=startIdx+pi;
     const li=document.createElement('li'); li.className='q-item';
     const opts=q.options.map(o=>{
       const isCorrect=o.label===q.correctLabel;
@@ -1033,6 +1171,62 @@ function renderSection2(questions){
       </div>`;
     ul.appendChild(li);
   });
+  renderPager('pagerAnswers',page,totalPages,(p)=>renderSection2(questions,p));
+}
+
+function renderPager(containerId,currentPage,totalPages,onChange){
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML='';
+  if(totalPages<=1) return;
+
+  const makeBtn=(label,disabled,onClick,extraClass='')=>{
+    const b=document.createElement('button');
+    b.className='pager-btn '+extraClass;
+    b.textContent=label;
+    b.disabled=disabled;
+    if(!disabled) b.onclick=onClick;
+    return b;
+  };
+
+  el.appendChild(makeBtn('‹ Prev',currentPage<=1,()=>{ onChange(currentPage-1); jumpToContainer(containerId); },'pager-arrow'));
+
+  // Page number buttons (show all if few, else windowed around current)
+  const maxButtons=7;
+  let pages=[];
+  if(totalPages<=maxButtons){
+    pages=Array.from({length:totalPages},(_,i)=>i+1);
+  } else {
+    pages=[1];
+    let start=Math.max(2,currentPage-1);
+    let end=Math.min(totalPages-1,currentPage+1);
+    if(start>2) pages.push('…');
+    for(let p=start;p<=end;p++) pages.push(p);
+    if(end<totalPages-1) pages.push('…');
+    pages.push(totalPages);
+  }
+  pages.forEach(p=>{
+    if(p==='…'){
+      const span=document.createElement('span');
+      span.className='pager-btn';
+      span.style.cursor='default';
+      span.style.opacity='.5';
+      span.textContent='…';
+      el.appendChild(span);
+    } else {
+      const isActive=p===currentPage;
+      el.appendChild(makeBtn(String(p),false,()=>{ onChange(p); jumpToContainer(containerId); },isActive?'active':''));
+    }
+  });
+
+  el.appendChild(makeBtn('Next ›',currentPage>=totalPages,()=>{ onChange(currentPage+1); jumpToContainer(containerId); },'pager-arrow'));
+}
+
+function jumpToContainer(pagerId){
+  // Scroll the parent section-body into view so user lands at top of the new page's results
+  const pagerEl=document.getElementById(pagerId);
+  const sectionBody=pagerEl?.closest('.section-body');
+  if(sectionBody) sectionBody.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
@@ -1103,8 +1297,12 @@ async function downloadPDF(mode){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
 
+  const university=extractedData?.courseUniversity||'';
+  const faculty=extractedData?.courseFaculty||'';
   const title=extractedData?.courseTitle||'Quiz';
+  const semester=extractedData?.courseSemester||'';
   const year=extractedData?.courseYear||'';
+  const docTitle=extractedData?.docTitle||title;
   const pageW=210; const pageH=297;
   const margin=18; const contentW=pageW-margin*2;
 
@@ -1167,11 +1365,11 @@ async function downloadPDF(mode){
     doc.setFontSize(7.5);
     doc.setTextColor(...dimGray);
     const courseInfoMaxW=pageW-margin*2-70;
-    let courseInfo=`${title}${year?' · '+year:''}`;
+    let courseInfo=docTitle;
     while(doc.getStringUnitWidth(courseInfo)*7.5/doc.internal.scaleFactor>courseInfoMaxW && courseInfo.length>10){
       courseInfo=courseInfo.slice(0,-1);
     }
-    if(courseInfo!==`${title}${year?' · '+year:''}`) courseInfo=courseInfo.trim()+'…';
+    if(courseInfo!==docTitle) courseInfo=courseInfo.trim()+'…';
     doc.text(courseInfo,pageW/2,13.5,{align:'center'});
     return 30;
   }
@@ -1197,6 +1395,36 @@ async function downloadPDF(mode){
   // ── TITLE PAGE SECTION ──
   y=drawPageHeader();
   drawWatermark();
+
+  // Cover info block — university / faculty / course / semester / year, each on its own line if present
+  const coverLines=[];
+  if(university) coverLines.push({text:university,size:11,bold:true,color:white});
+  if(faculty)    coverLines.push({text:faculty,size:9,bold:false,color:dimGray});
+  const courseLine=[title,semester,year].filter(Boolean).join(' · ');
+  if(courseLine) coverLines.push({text:courseLine,size:9,bold:true,color:[120,180,255]});
+
+  if(coverLines.length){
+    const coverPadTop=8; const coverLineGap=6.5; const coverPadBottom=6;
+    // Pre-wrap all lines first so we can compute exact box height
+    let wrappedCoverLines=[];
+    coverLines.forEach(line=>{
+      doc.setFont('helvetica',line.bold?'bold':'normal');
+      const wrapped=splitText(line.text,contentW-22,line.size);
+      wrapped.forEach(wl=>wrappedCoverLines.push({text:wl,size:line.size,bold:line.bold,color:line.color}));
+    });
+    const coverH=coverPadTop+wrappedCoverLines.length*coverLineGap+coverPadBottom;
+    doc.setFillColor(...lightBlueBg);
+    doc.roundedRect(margin,y,contentW,coverH,3,3,'F');
+    doc.setFillColor(...cyan);
+    doc.roundedRect(margin,y,4,coverH,2,2,'F');
+    wrappedCoverLines.forEach((line,li)=>{
+      doc.setFont('helvetica',line.bold?'bold':'normal');
+      doc.setFontSize(line.size);
+      doc.setTextColor(...line.color);
+      doc.text(line.text,margin+12,y+coverPadTop+li*coverLineGap);
+    });
+    y+=coverH+8;
+  }
 
   // Section title box
   doc.setFillColor(...lightBlueBg);
@@ -1330,9 +1558,10 @@ async function downloadPDF(mode){
   // Add footer to first page too
   // We call drawFooter after each page is complete
 
+  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
   const fname=mode==='questions'
-    ?`${title.replace(/\s/g,'_')}_Questions.pdf`
-    :`${title.replace(/\s/g,'_')}_QA.pdf`;
+    ?`${fnameBase}_Questions.pdf`
+    :`${fnameBase}_QA.pdf`;
   doc.save(fname);
   toast(`PDF downloaded: ${fname}`,'success');
 }
@@ -1348,11 +1577,12 @@ function copyJSON(){
 }
 function downloadJSON(){
   if(!generatedJSON){ toast('No JSON yet — run extraction first','error'); return; }
-  const title=extractedData?.courseTitle||'quiz';
+  const docTitle=extractedData?.docTitle||extractedData?.courseTitle||'quiz';
+  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
   const blob=new Blob([JSON.stringify(generatedJSON,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download=`${title.replace(/\s/g,'_')}_quiz.json`;
+  a.download=`${fnameBase}_quiz.json`;
   a.click();
   toast('JSON downloaded','success');
 }
