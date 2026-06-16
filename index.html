@@ -648,7 +648,7 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL  = 'gemini-flash-latest';
+const GEMINI_MODEL  = 'gemini-2.0-flash';
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT
@@ -952,7 +952,7 @@ Rules:
 
     setProgress(30,'Parsing extraction results...');
     try{
-      extracted=extractJSON(extractText);
+      let extracted=extractJSON(extractText);
     }catch(e){
       throw new Error('Failed to parse extraction response. Try again.');
     }
