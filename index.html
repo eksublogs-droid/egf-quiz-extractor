@@ -60,16 +60,16 @@
   }
 
   /* ── LAYOUT ─────────────────────────────────────────── */
-  #app{position:relative;z-index:1;width:100%;max-width:1400px;margin:0 auto;padding:0 32px 80px}
-  @media(max-width:768px){#app{padding:0 16px 60px}}
-  @media(min-width:1400px){#app{max-width:1600px;padding:0 48px 80px}}
+  #app{position:relative;z-index:1;width:100%;max-width:100%;margin:0;padding:0 20px 60px}
+  @media(max-width:768px){#app{padding:0 12px 48px}}
+  @media(min-width:1200px){#app{padding:0 40px 60px}}
 
   /* ── HEADER ─────────────────────────────────────────── */
   header{
     display:flex;align-items:center;justify-content:space-between;
-    padding:28px 0 36px;
+    padding:16px 0 20px;
     border-bottom:1px solid var(--blue-line);
-    margin-bottom:40px;
+    margin-bottom:24px;
   }
   .logo{display:flex;align-items:center;gap:12px}
   .logo-icon{
@@ -92,7 +92,7 @@
   #settingsBtn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-glow)}
 
   /* ── HERO ───────────────────────────────────────────── */
-  .hero{text-align:center;margin-bottom:44px;padding:0 10px}
+  .hero{text-align:center;margin-bottom:24px;padding:0 10px}
   .hero-eyebrow{
     display:inline-flex;align-items:center;gap:7px;
     background:var(--blue-glow);border:1px solid var(--blue-line);
@@ -111,8 +111,8 @@
     background:var(--navy-card);
     border:1px solid var(--white-faint);
     border-radius:var(--radius);
-    padding:28px;
-    margin-bottom:20px;
+    padding:20px;
+    margin-bottom:16px;
   }
   .card-title{
     font-family:var(--font-main);font-size:13px;font-weight:600;
@@ -214,8 +214,8 @@
   #outputArea{display:none}
   .section-header{
     display:flex;align-items:center;justify-content:space-between;
-    flex-wrap:wrap;gap:12px;
-    padding:20px 28px;
+    flex-wrap:wrap;gap:10px;
+    padding:14px 20px;
     background:linear-gradient(90deg,var(--navy-hover),var(--navy-card));
     border-radius:var(--radius) var(--radius) 0 0;
     border:1px solid var(--white-faint);
@@ -226,55 +226,74 @@
     font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
   }
   .badge-num{
-    width:24px;height:24px;border-radius:50%;
+    width:22px;height:22px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;
     font-weight:700;font-size:11px;color:#fff;flex-shrink:0;
   }
   .s1 .badge-num{background:var(--blue)}
   .s2 .badge-num{background:var(--cyan);color:var(--navy)}
   .s3 .badge-num{background:var(--gold);color:var(--navy)}
-  .section-title{font-family:var(--font-main);font-size:16px;font-weight:600}
+  .section-title{font-family:var(--font-main);font-size:15px;font-weight:600}
   .section-body{
     border:1px solid var(--white-faint);border-top:none;
     border-radius:0 0 var(--radius) var(--radius);
-    padding:24px 28px;background:var(--navy-card);
-    margin-bottom:24px;
+    padding:0;background:var(--navy-card);
+    margin-bottom:20px;
   }
 
   /* ── QUESTION LIST ──────────────────────────────────── */
-  .q-list{list-style:none}
+  .q-list{list-style:none;padding:0;margin:0}
   .q-item{
-    padding:14px 0;
+    padding:16px 20px;
     border-bottom:1px solid var(--white-faint);
-    display:flex;gap:12px;
   }
-  .q-item:last-child{border-bottom:none;padding-bottom:0}
+  .q-item:last-child{border-bottom:none}
+  .q-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .q-num{
-    font-family:var(--font-mono);font-size:12px;color:var(--blue-bright);
-    flex-shrink:0;width:28px;padding-top:1px;
+    font-family:var(--font-mono);font-size:11px;font-weight:700;
+    color:#fff;background:var(--blue);
+    border-radius:5px;padding:2px 7px;flex-shrink:0;margin-top:2px;
+    letter-spacing:.03em;
   }
-  .q-content{flex:1}
-  .q-text{font-size:16px;color:var(--white);line-height:1.65;margin-bottom:10px;font-weight:500}
-  .q-options{display:flex;flex-direction:column;gap:6px}
-  .q-opt{font-size:14.5px;color:var(--white-dim);display:flex;gap:9px;line-height:1.55}
-  .q-opt .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0}
+  .q-content{flex:1;width:100%}
+  .q-text{font-size:15px;color:var(--white);line-height:1.6;font-weight:600;margin-bottom:0}
+  .q-options{display:flex;flex-direction:column;gap:0}
+  .q-opt{
+    font-size:14px;color:#b0bfd8;
+    display:flex;align-items:flex-start;gap:10px;
+    padding:7px 10px;border-radius:6px;
+    line-height:1.5;transition:background .15s;
+  }
+  .q-opt:hover{background:rgba(255,255,255,.03)}
+  .q-opt .opt-label{
+    color:var(--blue-bright);font-family:var(--font-mono);
+    font-size:12px;font-weight:700;flex-shrink:0;
+    width:18px;padding-top:1px;
+  }
+  .q-opt .opt-text{color:#b0bfd8;flex:1}
+  .q-opt.correct-opt{
+    background:rgba(34,197,94,.1);
+    border-radius:6px;
+  }
   .q-opt.correct-opt .opt-label{color:var(--green)}
-  .q-opt.correct-opt .opt-text{color:var(--white);font-weight:500}
+  .q-opt.correct-opt .opt-text{color:#e2f5e9;font-weight:600}
   .correct-tag{
-    display:inline-flex;align-items:center;gap:4px;
-    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);
-    color:var(--green);border-radius:999px;padding:2px 10px;
-    font-size:11px;font-family:var(--font-mono);margin-top:6px;
+    display:inline-flex;align-items:center;gap:6px;
+    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);
+    color:var(--green);border-radius:6px;padding:5px 12px;
+    font-size:12.5px;font-family:var(--font-main);font-weight:600;
+    margin-top:10px;width:100%;
   }
   .explanation-box{
-    background:rgba(45,126,255,.06);border:1px solid var(--blue-line);
-    border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px;
+    background:rgba(45,126,255,.07);border:1px solid rgba(45,126,255,.18);
+    border-left:3px solid var(--blue);
+    border-radius:0 6px 6px 0;padding:10px 14px;margin-top:10px;
   }
   .explanation-box .exp-label{
     font-size:10px;font-family:var(--font-mono);color:var(--blue-bright);
-    letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;
+    letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;font-weight:700;
   }
-  .explanation-box p{font-size:13px;color:var(--white-dim);line-height:1.6}
+  .explanation-box p{font-size:13.5px;color:#aabbd4;line-height:1.65}
 
   /* ── JSON SECTION ───────────────────────────────────── */
   #jsonOutput{
@@ -386,7 +405,7 @@
   /* ── PAGINATION ─────────────────────────────────────── */
   .pager{
     display:flex;align-items:center;justify-content:center;gap:6px;
-    flex-wrap:wrap;margin-top:20px;padding-top:18px;
+    flex-wrap:wrap;padding:14px 20px 16px;
     border-top:1px solid var(--white-faint);
   }
   .pager:empty{display:none}
@@ -425,11 +444,11 @@
 
   /* ── RESPONSIVE ─────────────────────────────────────── */
   @media(max-width:600px){
-    .section-header{padding:16px 18px}
-    .section-body{padding:16px 18px}
-    .card{padding:18px}
-    header{padding:18px 0 24px}
-    .hero h2{font-size:24px}
+    .section-header{padding:12px 14px}
+    .q-item{padding:14px 14px}
+    .card{padding:14px}
+    header{padding:12px 0 16px}
+    .hero h2{font-size:22px}
   }
 </style>
 </head>
@@ -1117,12 +1136,12 @@ function renderSection1(questions,page=1){
   pageItems.forEach((q,pi)=>{
     const i=startIdx+pi;
     const li=document.createElement('li'); li.className='q-item';
-    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
-    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
-      <div class="q-content">
+    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
+    li.innerHTML=`<div class="q-header">
+        <span class="q-num">Q${i+1}</span>
         <div class="q-text">${escHtml(q.question)}</div>
-        <div class="q-options">${opts}</div>
-      </div>`;
+      </div>
+      <div class="q-options">${opts}</div>`;
     ul.appendChild(li);
   });
   renderPager('pagerOnly',page,totalPages,(p)=>renderSection1(questions,p));
@@ -1141,19 +1160,19 @@ function renderSection2(questions,page=1){
     const opts=q.options.map(o=>{
       const isCorrect=o.label===q.correctLabel;
       return `<div class="q-opt${isCorrect?' correct-opt':''}">
-        <span class="opt-label">${o.label}.</span>
+        <span class="opt-label">${o.label}</span>
         <span class="opt-text">${escHtml(o.text)}</span>
       </div>`;
     }).join('');
-    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
-      <div class="q-content">
+    li.innerHTML=`<div class="q-header">
+        <span class="q-num">Q${i+1}</span>
         <div class="q-text">${escHtml(q.question)}</div>
-        <div class="q-options">${opts}</div>
-        <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
-        <div class="explanation-box">
-          <div class="exp-label">Explanation</div>
-          <p>${escHtml(q.explanation)}</p>
-        </div>
+      </div>
+      <div class="q-options">${opts}</div>
+      <div class="correct-tag">✓ &nbsp;Correct Answer: ${escHtml(q.correctLabel)}. &nbsp;${escHtml(q.correctText)}</div>
+      <div class="explanation-box">
+        <div class="exp-label">Explanation</div>
+        <p>${escHtml(q.explanation)}</p>
       </div>`;
     ul.appendChild(li);
   });
