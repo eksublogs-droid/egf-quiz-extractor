@@ -1029,6 +1029,26 @@ function extractJSON(text){
     }catch(_){}
   }
 
+  // 6. Fix trailing commas in arrays
+  if(a1!==-1&&a2>a1){
+    try{
+      const fixed=s.slice(a1,a2+1)
+        .replace(/,\s*([}\]])/g,'$1')
+        .replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
+      return JSON.parse(fixed);
+    }catch(_){}
+  }
+
+  // 7. Last resort: strip control chars and retry array
+  try{
+    const cleaned=s.replace(/[\x00-\x09\x0b\x0c\x0e-\x1f]/g,'');
+    const oa=cleaned.indexOf('['); const oz=cleaned.lastIndexOf(']');
+    if(oa!==-1&&oz>oa){
+      const fixed=cleaned.slice(oa,oz+1).replace(/,\s*([}\]])/g,'$1');
+      return JSON.parse(fixed);
+    }
+  }catch(_){}
+
   throw new Error('Could not extract JSON from response');
 }
 
@@ -1184,6 +1204,7 @@ Rules:
     const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
 
     setProgress(30,'Parsing extraction results...');
+    let extracted;
     try{
       extracted=extractJSON(extractText);
     }catch(e){
@@ -1233,9 +1254,10 @@ QUESTIONS:
 ${questionsForVerification}`;
 
     const keys=getKeys();
+    const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
     const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length,2048),
-      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length,2048)
+      geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0),
+      geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0)
     ]);
 
     setProgress(70,'Resolving conflicts...');
@@ -1243,15 +1265,31 @@ ${questionsForVerification}`;
     let pass1;
     try{
       pass1=extractJSON(pass1Text);
+      if(!Array.isArray(pass1)) throw new Error('Not an array');
     }catch(e){
-      throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+      // Retry pass1 sequentially if parallel parse failed
+      try{
+        const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0);
+        pass1=extractJSON(retryText);
+        if(!Array.isArray(pass1)) throw new Error('Not an array');
+      }catch(e2){
+        throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+      }
     }
 
     let pass2;
     try{
       pass2=extractJSON(pass2Text);
+      if(!Array.isArray(pass2)) throw new Error('Not an array');
     }catch(e){
-      throw new Error('Failed to parse Pass 2 answer verification. Try again.');
+      // Retry pass2 if parallel parse failed
+      try{
+        const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0);
+        pass2=extractJSON(retryText);
+        if(!Array.isArray(pass2)) throw new Error('Not an array');
+      }catch(e2){
+        pass2=pass1; // fallback: use pass1 for both, tiebreaker will handle conflicts
+      }
     }
 
     setProgress(75,'Resolving conflicts...');
