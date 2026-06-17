@@ -1282,8 +1282,8 @@ ${questionsForVerification}`;
       const keys=getKeys();
       const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
       const [pass1Text,pass2Text]=await Promise.all([
-        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-1.5-flash'),
-        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-1.5-flash')
+        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash'),
+        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash')
       ]);
 
       setProgress(70,'Resolving conflicts...');
@@ -1294,7 +1294,7 @@ ${questionsForVerification}`;
         if(!Array.isArray(pass1)) throw new Error('Not an array');
       }catch(e){
         try{
-          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-1.5-flash');
+          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash');
           pass1=extractJSON(retryText);
           if(!Array.isArray(pass1)) throw new Error('Not an array');
         }catch(e2){
@@ -1308,7 +1308,7 @@ ${questionsForVerification}`;
         if(!Array.isArray(pass2)) throw new Error('Not an array');
       }catch(e){
         try{
-          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-1.5-flash');
+          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash');
           pass2=extractJSON(retryText);
           if(!Array.isArray(pass2)) throw new Error('Not an array');
         }catch(e2){
@@ -1341,7 +1341,7 @@ QUESTION (index ${ci}):
 Q${ci+1}: ${q.question}
 ${opts}`;
           try{
-            const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,0,'gemini-1.5-flash');
+            const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,0,'gemini-2.5-flash');
             const resolved=extractJSON(text);
             return Array.isArray(resolved)?resolved[0]:resolved;
           }catch(e){
