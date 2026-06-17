@@ -41,7 +41,7 @@
     background:var(--navy);
     color:var(--white);
     font-family:var(--font-body);
-    font-size:15px;
+    font-size:17px;
     line-height:1.6;
     min-height:100vh;
     overflow-x:hidden;
@@ -60,16 +60,15 @@
   }
 
   /* ── LAYOUT ─────────────────────────────────────────── */
-  #app{position:relative;z-index:1;width:100%;max-width:100%;margin:0;padding:0 20px 60px}
-  @media(max-width:768px){#app{padding:0 12px 48px}}
-  @media(min-width:1200px){#app{padding:0 40px 60px}}
+  #app{position:relative;z-index:1;width:100%;padding:0 32px 80px}
+  @media(max-width:768px){#app{padding:0 16px 60px}}
 
   /* ── HEADER ─────────────────────────────────────────── */
   header{
     display:flex;align-items:center;justify-content:space-between;
-    padding:16px 0 20px;
+    padding:28px 0 36px;
     border-bottom:1px solid var(--blue-line);
-    margin-bottom:24px;
+    margin-bottom:40px;
   }
   .logo{display:flex;align-items:center;gap:12px}
   .logo-icon{
@@ -92,7 +91,7 @@
   #settingsBtn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-glow)}
 
   /* ── HERO ───────────────────────────────────────────── */
-  .hero{text-align:center;margin-bottom:24px;padding:0 10px}
+  .hero{text-align:center;margin-bottom:44px;padding:0 10px}
   .hero-eyebrow{
     display:inline-flex;align-items:center;gap:7px;
     background:var(--blue-glow);border:1px solid var(--blue-line);
@@ -111,8 +110,8 @@
     background:var(--navy-card);
     border:1px solid var(--white-faint);
     border-radius:var(--radius);
-    padding:20px;
-    margin-bottom:16px;
+    padding:28px;
+    margin-bottom:20px;
   }
   .card-title{
     font-family:var(--font-main);font-size:13px;font-weight:600;
@@ -214,8 +213,8 @@
   #outputArea{display:none}
   .section-header{
     display:flex;align-items:center;justify-content:space-between;
-    flex-wrap:wrap;gap:10px;
-    padding:14px 20px;
+    flex-wrap:wrap;gap:12px;
+    padding:20px 28px;
     background:linear-gradient(90deg,var(--navy-hover),var(--navy-card));
     border-radius:var(--radius) var(--radius) 0 0;
     border:1px solid var(--white-faint);
@@ -226,74 +225,55 @@
     font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
   }
   .badge-num{
-    width:22px;height:22px;border-radius:50%;
+    width:24px;height:24px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;
     font-weight:700;font-size:11px;color:#fff;flex-shrink:0;
   }
   .s1 .badge-num{background:var(--blue)}
   .s2 .badge-num{background:var(--cyan);color:var(--navy)}
   .s3 .badge-num{background:var(--gold);color:var(--navy)}
-  .section-title{font-family:var(--font-main);font-size:15px;font-weight:600}
+  .section-title{font-family:var(--font-main);font-size:16px;font-weight:600}
   .section-body{
     border:1px solid var(--white-faint);border-top:none;
     border-radius:0 0 var(--radius) var(--radius);
-    padding:0;background:var(--navy-card);
-    margin-bottom:20px;
+    padding:24px 28px;background:var(--navy-card);
+    margin-bottom:24px;
   }
 
   /* ── QUESTION LIST ──────────────────────────────────── */
-  .q-list{list-style:none;padding:0;margin:0}
+  .q-list{list-style:none}
   .q-item{
-    padding:16px 20px;
+    padding:14px 0;
     border-bottom:1px solid var(--white-faint);
+    display:flex;gap:12px;
   }
-  .q-item:last-child{border-bottom:none}
-  .q-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+  .q-item:last-child{border-bottom:none;padding-bottom:0}
   .q-num{
-    font-family:var(--font-mono);font-size:11px;font-weight:700;
-    color:#fff;background:var(--blue);
-    border-radius:5px;padding:2px 7px;flex-shrink:0;margin-top:2px;
-    letter-spacing:.03em;
+    font-family:var(--font-mono);font-size:12px;color:var(--blue-bright);
+    flex-shrink:0;width:28px;padding-top:1px;
   }
-  .q-content{flex:1;width:100%}
-  .q-text{font-size:15px;color:var(--white);line-height:1.6;font-weight:600;margin-bottom:0}
-  .q-options{display:flex;flex-direction:column;gap:0}
-  .q-opt{
-    font-size:14px;color:#b0bfd8;
-    display:flex;align-items:flex-start;gap:10px;
-    padding:7px 10px;border-radius:6px;
-    line-height:1.5;transition:background .15s;
-  }
-  .q-opt:hover{background:rgba(255,255,255,.03)}
-  .q-opt .opt-label{
-    color:var(--blue-bright);font-family:var(--font-mono);
-    font-size:12px;font-weight:700;flex-shrink:0;
-    width:18px;padding-top:1px;
-  }
-  .q-opt .opt-text{color:#b0bfd8;flex:1}
-  .q-opt.correct-opt{
-    background:rgba(34,197,94,.1);
-    border-radius:6px;
-  }
+  .q-content{flex:1}
+  .q-text{font-size:18px;color:var(--white);line-height:1.65;margin-bottom:10px;font-weight:500}
+  .q-options{display:flex;flex-direction:column;gap:6px}
+  .q-opt{font-size:16px;color:var(--white-dim);display:flex;gap:9px;line-height:1.55}
+  .q-opt .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0}
   .q-opt.correct-opt .opt-label{color:var(--green)}
-  .q-opt.correct-opt .opt-text{color:#e2f5e9;font-weight:600}
+  .q-opt.correct-opt .opt-text{color:var(--white);font-weight:500}
   .correct-tag{
-    display:inline-flex;align-items:center;gap:6px;
-    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);
-    color:var(--green);border-radius:6px;padding:5px 12px;
-    font-size:12.5px;font-family:var(--font-main);font-weight:600;
-    margin-top:10px;width:100%;
+    display:inline-flex;align-items:center;gap:4px;
+    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);
+    color:var(--green);border-radius:999px;padding:2px 10px;
+    font-size:11px;font-family:var(--font-mono);margin-top:6px;
   }
   .explanation-box{
-    background:rgba(45,126,255,.07);border:1px solid rgba(45,126,255,.18);
-    border-left:3px solid var(--blue);
-    border-radius:0 6px 6px 0;padding:10px 14px;margin-top:10px;
+    background:rgba(45,126,255,.06);border:1px solid var(--blue-line);
+    border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px;
   }
   .explanation-box .exp-label{
     font-size:10px;font-family:var(--font-mono);color:var(--blue-bright);
-    letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;
   }
-  .explanation-box p{font-size:13.5px;color:#aabbd4;line-height:1.65}
+  .explanation-box p{font-size:15px;color:var(--white-dim);line-height:1.6}
 
   /* ── JSON SECTION ───────────────────────────────────── */
   #jsonOutput{
@@ -319,8 +299,8 @@
   .modal-overlay.open{display:flex}
   .modal{
     background:var(--navy-card);border:1px solid var(--blue-line);
-    border-radius:var(--radius);width:100%;max-width:500px;
-    padding:32px;position:relative;
+    border-radius:var(--radius);width:100%;max-width:680px;
+    padding:32px;position:relative;max-height:90vh;overflow-y:auto;
   }
   .modal h2{font-family:var(--font-main);font-size:18px;font-weight:700;margin-bottom:6px}
   .modal .sub{color:var(--white-dim);font-size:13px;margin-bottom:24px}
@@ -358,7 +338,33 @@
   }
   .key-indicator{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
 
-  /* ── TOAST ──────────────────────────────────────────── */
+  /* ── KEY USAGE BARS ─────────────────────────────────── */
+  .usage-panel{margin-top:20px;border-top:1px solid var(--white-faint);padding-top:16px}
+  .usage-panel-title{font-size:12px;font-family:var(--font-mono);color:var(--blue-bright);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;display:flex;align-items:center;gap:7px}
+  .usage-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .usage-label{font-size:12px;font-family:var(--font-mono);color:var(--white-dim);width:80px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .usage-bar-bg{flex:1;height:8px;background:var(--white-faint);border-radius:999px;overflow:hidden}
+  .usage-bar-fill{height:100%;border-radius:999px;transition:width .5s ease}
+  .usage-pct{font-size:12px;font-family:var(--font-mono);color:var(--white-dim);width:38px;text-align:right;flex-shrink:0}
+  .usage-active-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
+  .usage-inactive-dot{width:8px;height:8px;border-radius:50%;background:var(--white-faint);flex-shrink:0}
+  /* Current API indicator in header area */
+  #activeKeyBadge{
+    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);
+    border-radius:999px;padding:3px 12px;font-size:12px;font-family:var(--font-mono);
+    color:var(--green);display:none;align-items:center;gap:6px;margin-top:6px;
+  }
+  #activeKeyBadge .ak-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+  /* Dynamic key slots */
+  #keySlotsContainer{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){#keySlotsContainer{grid-template-columns:1fr}}
+  .key-slot-dyn{display:flex;flex-direction:column;gap:5px;background:var(--navy);border:1px solid var(--white-faint);border-radius:var(--radius-sm);padding:12px}
+  .key-slot-dyn label{font-size:11px;color:var(--white-dim);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;justify-content:space-between}
+  .key-slot-dyn input{background:transparent;border:none;border-top:1px solid var(--white-faint);padding:8px 0 0;color:var(--white);font-family:var(--font-mono);font-size:12px;outline:none;width:100%}
+  .key-remove-btn{background:none;border:none;color:var(--white-faint);cursor:pointer;font-size:14px;padding:0;line-height:1;transition:var(--transition)}
+  .key-remove-btn:hover{color:var(--red)}
+  .add-key-btn{display:flex;align-items:center;gap:8px;background:var(--navy);border:1px dashed var(--blue-line);color:var(--blue-bright);border-radius:var(--radius-sm);padding:12px;cursor:pointer;font-size:13px;font-family:var(--font-main);font-weight:600;transition:var(--transition);width:100%;justify-content:center;margin-top:8px}
+  .add-key-btn:hover{border-color:var(--blue);background:var(--blue-glow)}
   #toast{
     position:fixed;bottom:28px;right:28px;z-index:2000;
     background:var(--navy-card);border:1px solid var(--blue-line);
@@ -405,7 +411,7 @@
   /* ── PAGINATION ─────────────────────────────────────── */
   .pager{
     display:flex;align-items:center;justify-content:center;gap:6px;
-    flex-wrap:wrap;padding:14px 20px 16px;
+    flex-wrap:wrap;margin-top:20px;padding-top:18px;
     border-top:1px solid var(--white-faint);
   }
   .pager:empty{display:none}
@@ -444,11 +450,11 @@
 
   /* ── RESPONSIVE ─────────────────────────────────────── */
   @media(max-width:600px){
-    .section-header{padding:12px 14px}
-    .q-item{padding:14px 14px}
-    .card{padding:14px}
-    header{padding:12px 0 16px}
-    .hero h2{font-size:22px}
+    .section-header{padding:16px 18px}
+    .section-body{padding:16px 18px}
+    .card{padding:18px}
+    header{padding:18px 0 24px}
+    .hero h2{font-size:24px}
   }
 </style>
 </head>
@@ -461,7 +467,7 @@
       <div class="logo-icon">EG</div>
       <div class="logo-text">
         <h1>EduGlobalForge</h1>
-        <p>Quiz Extractor · AI-Powered</p>
+        <div id="activeKeyBadge"><span class="ak-dot"></span><span id="activeKeyLabel">Key 1 Active</span></div>
       </div>
     </div>
     <button id="settingsBtn" onclick="openSettings()">
@@ -525,8 +531,9 @@
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
       <div class="progress-steps">
         <div class="step-item" id="step1"><div class="step-dot"></div>Extracting questions &amp; course info</div>
-        <div class="step-item" id="step2"><div class="step-dot"></div>Verifying &amp; cross-checking answers</div>
-        <div class="step-item" id="step3"><div class="step-dot"></div>Generating outputs</div>
+        <div class="step-item" id="step2"><div class="step-dot"></div>Verifying answers — Pass 1 &amp; 2 (parallel)</div>
+        <div class="step-item" id="step3"><div class="step-dot"></div>Resolving any conflicts (tiebreaker)</div>
+        <div class="step-item" id="step4"><div class="step-dot"></div>Generating outputs</div>
       </div>
     </div>
 
@@ -626,26 +633,26 @@
   <div class="modal">
     <button class="modal-close" onclick="closeSettings()">✕</button>
     <h2>API Key Settings</h2>
-    <p class="sub">Paste your Gemini API keys. Keys auto-rotate silently when one hits its daily quota.</p>
-    <div class="key-slot">
-      <label><span class="key-badge key-mine">MINE</span> Your Key</label>
-      <input type="password" id="key0" placeholder="AIza..."/>
+    <p class="sub">Add as many Gemini API keys as you want. Keys auto-rotate when one hits its daily quota.</p>
+
+    <div id="keySlotsContainer"></div>
+    <button class="add-key-btn" onclick="addKeySlot()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Another API Key
+    </button>
+
+    <!-- Usage panel -->
+    <div class="usage-panel" id="usagePanel" style="display:none">
+      <div class="usage-panel-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Real-time API Usage
+      </div>
+      <div id="usageBars"></div>
     </div>
-    <div class="key-slot">
-      <label><span class="key-badge key-bro">BRO</span> Bro's Key</label>
-      <input type="password" id="key1" placeholder="AIza..."/>
-    </div>
-    <div class="key-slot">
-      <label><span class="key-badge key-sis">SIS</span> Sis's Key</label>
-      <input type="password" id="key2" placeholder="AIza..."/>
-    </div>
-    <div class="key-slot">
-      <label><span class="key-badge key-babe">BABE</span> Babe's Key</label>
-      <input type="password" id="key3" placeholder="AIza..."/>
-    </div>
-    <div class="key-status">
+
+    <div class="key-status" style="margin-top:16px">
       <div class="key-indicator"></div>
-      <span id="keyStatusText">No keys saved yet — paste at least one key above.</span>
+      <span id="keyStatusText">No keys saved yet — add at least one key above.</span>
     </div>
     <div style="display:flex;gap:10px;margin-top:20px">
       <button class="btn btn-primary" onclick="saveKeys()">Save Keys</button>
@@ -669,33 +676,167 @@ let currentKeyIndex = 0;
 const GEMINI_MODEL  = 'gemini-flash-latest';
 
 // ════════════════════════════════════════════════════════
-//  API KEY MANAGEMENT
+//  API KEY MANAGEMENT — UNLIMITED KEYS
 // ════════════════════════════════════════════════════════
-function getKeys(){
-  return ['key0','key1','key2','key3']
-    .map(k=>localStorage.getItem('egf_'+k)||'')
-    .filter(Boolean);
+const KEY_COLORS=['#2D7EFF','#00D4FF','#F5C842','#22C55E','#EF4444','#A855F7','#F97316','#EC4899','#14B8A6','#84CC16'];
+const keyUsage={}; // { storageKey: { calls:0, errors:0 } }
+
+function getAllStoredKeys(){
+  const keys=[];
+  let i=0;
+  while(true){
+    const k=localStorage.getItem('egf_key_'+i);
+    if(k===null) break;
+    keys.push({storageKey:'egf_key_'+i,value:k});
+    i++;
+  }
+  return keys;
 }
-function saveKeys(){
-  ['key0','key1','key2','key3'].forEach(k=>{
-    const v=document.getElementById(k).value.trim();
-    if(v) localStorage.setItem('egf_'+k,v);
-    else  localStorage.removeItem('egf_'+k);
+
+function saveAllStoredKeys(keyValues){
+  // Clear old
+  let i=0;
+  while(localStorage.getItem('egf_key_'+i)!==null){
+    localStorage.removeItem('egf_key_'+i);
+    i++;
+  }
+  // Save new
+  keyValues.forEach((v,idx)=>{ if(v.trim()) localStorage.setItem('egf_key_'+idx,v.trim()); });
+}
+
+function getKeys(){
+  const keys=[];
+  let i=0;
+  while(true){
+    const k=localStorage.getItem('egf_key_'+i);
+    if(k===null) break;
+    if(k) keys.push(k);
+    i++;
+  }
+  return keys;
+}
+
+function renderKeySlots(preload=[]){
+  const container=document.getElementById('keySlotsContainer');
+  container.innerHTML='';
+  const values=preload.length?preload:getAllStoredKeys().map(k=>k.value);
+  if(!values.length) values.push(''); // at least one slot
+  values.forEach((val,i)=>{ addKeySlot(val,i); });
+}
+
+let _slotCount=0;
+function addKeySlot(value='',idx=null){
+  const container=document.getElementById('keySlotsContainer');
+  const num=idx!==null?idx:container.children.length;
+  const color=KEY_COLORS[num%KEY_COLORS.length];
+  const div=document.createElement('div');
+  div.className='key-slot-dyn';
+  div.dataset.slot=num;
+  div.innerHTML=`
+    <label>
+      <span style="color:${color};font-weight:700">KEY ${num+1}</span>
+      <button class="key-remove-btn" onclick="removeKeySlot(this)" title="Remove">✕</button>
+    </label>
+    <input type="password" placeholder="AIza..." value="${value||''}"/>
+  `;
+  container.appendChild(div);
+}
+
+function removeKeySlot(btn){
+  const slot=btn.closest('.key-slot-dyn');
+  if(document.getElementById('keySlotsContainer').children.length<=1){
+    toast('At least one key slot required','error'); return;
+  }
+  slot.remove();
+  // Re-number labels
+  const slots=document.querySelectorAll('.key-slot-dyn');
+  slots.forEach((s,i)=>{
+    s.dataset.slot=i;
+    const lbl=s.querySelector('label span:first-child');
+    lbl.style.color=KEY_COLORS[i%KEY_COLORS.length];
+    lbl.textContent='KEY '+(i+1);
   });
+}
+
+function saveKeys(){
+  const slots=document.querySelectorAll('.key-slot-dyn input');
+  const values=Array.from(slots).map(inp=>inp.value.trim());
+  saveAllStoredKeys(values);
+  currentKeyIndex=0;
   updateKeyStatus();
+  renderUsageBars();
   closeSettings();
   toast('Keys saved successfully','success');
 }
+
 function loadKeysIntoModal(){
-  ['key0','key1','key2','key3'].forEach(k=>{
-    document.getElementById(k).value=localStorage.getItem('egf_'+k)||'';
+  renderKeySlots();
+  renderUsageBars();
+}
+
+// ── USAGE TRACKING ──
+function trackUsage(keyValue){
+  const k='usage_'+keyValue.slice(-8);
+  if(!keyUsage[k]) keyUsage[k]={calls:0,errors:0};
+  keyUsage[k].calls++;
+  renderUsageBars();
+  updateActiveKeyBadge();
+}
+
+function trackError(keyValue){
+  const k='usage_'+keyValue.slice(-8);
+  if(!keyUsage[k]) keyUsage[k]={calls:0,errors:0};
+  keyUsage[k].errors++;
+  renderUsageBars();
+}
+
+function renderUsageBars(){
+  const keys=getKeys();
+  const panel=document.getElementById('usagePanel');
+  const barsDiv=document.getElementById('usageBars');
+  if(!keys.length){ panel.style.display='none'; return; }
+  panel.style.display='block';
+
+  // Max calls for scaling
+  const usageVals=keys.map(k=>(keyUsage['usage_'+k.slice(-8)]?.calls||0));
+  const maxCalls=Math.max(...usageVals,1);
+  // Daily free limit approx (Gemini flash: ~500 RPD free tier reference)
+  const DAILY_LIMIT=500;
+
+  barsDiv.innerHTML='';
+  keys.forEach((k,i)=>{
+    const sk='usage_'+k.slice(-8);
+    const calls=keyUsage[sk]?.calls||0;
+    const pct=Math.min(Math.round((calls/DAILY_LIMIT)*100),100);
+    const color=KEY_COLORS[i%KEY_COLORS.length];
+    const isActive=i===currentKeyIndex;
+    const barColor=pct>=90?'#EF4444':pct>=60?'#F5C842':color;
+    barsDiv.innerHTML+=`
+      <div class="usage-row">
+        <div class="${isActive?'usage-active-dot':'usage-inactive-dot'}"></div>
+        <div class="usage-label" title="Key ${i+1} (…${k.slice(-6)})">Key ${i+1}</div>
+        <div class="usage-bar-bg"><div class="usage-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <div class="usage-pct" style="color:${barColor}">${pct}%</div>
+      </div>
+    `;
   });
 }
+
+function updateActiveKeyBadge(){
+  const keys=getKeys();
+  const badge=document.getElementById('activeKeyBadge');
+  const label=document.getElementById('activeKeyLabel');
+  if(!keys.length){ badge.style.display='none'; return; }
+  badge.style.display='flex';
+  label.textContent=`Key ${currentKeyIndex+1} Active`;
+}
+
 function updateKeyStatus(){
   const keys=getKeys();
   const el=document.getElementById('keyStatusText');
-  if(keys.length===0) el.textContent='No keys saved yet — paste at least one key above.';
-  else el.textContent=`${keys.length} key${keys.length>1?'s':''} saved. Currently using key ${currentKeyIndex+1}.`;
+  if(keys.length===0) el.textContent='No keys saved yet — add at least one key above.';
+  else el.textContent=`${keys.length} key${keys.length>1?'s':''} saved · Currently using Key ${currentKeyIndex+1}.`;
+  updateActiveKeyBadge();
 }
 function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); document.getElementById('settingsModal').classList.add('open') }
 function closeSettings(){ document.getElementById('settingsModal').classList.remove('open') }
@@ -711,10 +852,11 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
   const keyIdx=(startKeyIdx+attempt)%keys.length;
   const apiKey=keys[keyIdx];
+  trackUsage(apiKey);
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:8192},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -729,11 +871,13 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   }catch(e){ throw new Error('Network error: '+e.message) }
 
   if(res.status===429||res.status===503){
+    trackError(apiKey);
     if(attempt>=keys.length*2-1){
       const err=await res.json().catch(()=>({}));
       throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
+    updateActiveKeyBadge();
     return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
   }
   if(!res.ok){
@@ -741,6 +885,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     const msg=err?.error?.message||res.statusText;
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
+      updateActiveKeyBadge();
       return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
     }
     throw new Error(`Gemini error: ${msg}`);
@@ -817,19 +962,6 @@ function extractJSON(text){
   throw new Error('Could not extract JSON from response');
 }
 
-// Ensure parsed value is an array.
-// Gemini sometimes wraps the array in an object e.g. {"answers":[...]}
-// This unwraps it so callers can safely use .forEach / .find / .map
-function ensureArray(val){
-  if(Array.isArray(val)) return val;
-  if(val&&typeof val==='object'){
-    // Return the first property whose value is an array
-    for(const key of Object.keys(val)){
-      if(Array.isArray(val[key])) return val[key];
-    }
-  }
-  return [];
-}
 
 // ════════════════════════════════════════════════════════
 function handleDrop(e){
@@ -921,7 +1053,7 @@ function fileToBase64(file){
 //  PROGRESS HELPERS
 // ════════════════════════════════════════════════════════
 function setStep(n, state='active'){
-  for(let i=1;i<=3;i++){
+  for(let i=1;i<=4;i++){
     const el=document.getElementById('step'+i);
     el.className='step-item'+(i<n?' done':i===n?' '+state:'');
   }
@@ -982,14 +1114,13 @@ Rules:
     const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
 
     setProgress(30,'Parsing extraction results...');
-    let extracted;
     try{
       extracted=extractJSON(extractText);
     }catch(e){
       throw new Error('Failed to parse extraction response. Try again.');
     }
 
-    if(!extracted||!extracted.questions||!extracted.questions.length){
+    if(!extracted.questions||!extracted.questions.length){
       throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
     }
 
@@ -1006,53 +1137,91 @@ Rules:
     yearInput.value=extracted.courseYear||'';
     [uniInput,facInput,titleInput,semInput,yearInput].forEach(el=>el.disabled=false);
 
-    setProgress(35,'Verifying & cross-checking answers...');
+    setProgress(35,'Verifying answers — Pass 1 & 2 (parallel)...');
     setStep(2,'active');
 
-    // ── STEP 2: SINGLE VERIFICATION CALL (pass 1 & 2 merged + auto-resolve) ──
+    // ── STEPS 3 & 4: ANSWER VERIFICATION PASS 1 & PASS 2 IN PARALLEL ──
     const questionsForVerification=extracted.questions.map((q,i)=>{
       const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-      return `Q${i+1} (index ${i}): ${q.question}\n${opts}`;
+      return `Q${i+1}: ${q.question}\n${opts}`;
     }).join('\n\n');
 
-    const verifyPrompt=`You are an expert academic examiner. For each MCQ below, independently reason through it twice (Pass A and Pass B), then output the final agreed answer.
-
-Return ONLY a valid JSON array, no markdown, no extra text:
+    const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
+Return ONLY a valid JSON array, no markdown:
 [{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
 
-Rules:
-- qIndex is zero-based
-- correctLabel must be A/B/C/D
-- If your two passes disagree, pick the one you are most confident in and explain why
-- Return ONLY the JSON array
+QUESTIONS:
+${questionsForVerification}`;
+
+    const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
 
 QUESTIONS:
 ${questionsForVerification}`;
 
     const keys=getKeys();
-    const verifyText=await geminiCall(
-      [{text:verifyPrompt}],
-      'You are a JSON-only exam answer verifier. Respond ONLY with a valid JSON array starting with [ and ending with ]. No markdown, no backticks, no explanation.',
-      0,
-      currentKeyIndex%keys.length
-    );
+    const [pass1Text,pass2Text]=await Promise.all([
+      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length),
+      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length)
+    ]);
 
-    setProgress(75,'Building answer map...');
+    setProgress(70,'Resolving conflicts...');
+    setStep(3,'active');
     let pass1;
     try{
-      pass1=ensureArray(extractJSON(verifyText));
+      pass1=extractJSON(pass1Text);
     }catch(e){
-      // Fallback: continue with empty answers rather than crashing
-      pass1=[];
+      throw new Error('Failed to parse Pass 1 answer verification. Try again.');
     }
 
+    let pass2;
+    try{
+      pass2=extractJSON(pass2Text);
+    }catch(e){
+      throw new Error('Failed to parse Pass 2 answer verification. Try again.');
+    }
+
+    setProgress(75,'Resolving conflicts...');
+    // ── STEP 3: CONFLICT RESOLUTION ──
+    const conflicts=[];
+    pass1.forEach((a1,idx)=>{
+      const a2=pass2.find(x=>x.qIndex===a1.qIndex);
+      if(a2&&a1.correctLabel!==a2.correctLabel) conflicts.push(a1.qIndex);
+    });
+
     const finalAnswers=new Map();
-    pass1.forEach(a=>{ if(a&&typeof a.qIndex==='number') finalAnswers.set(a.qIndex,{...a}); });
+    pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
+
+    if(conflicts.length>0){
+      const conflictQuestions=conflicts.map(ci=>{
+        const q=extracted.questions[ci];
+        const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+        return `Q${ci+1} (index ${ci}): ${q.question}\n${opts}`;
+      }).join('\n\n');
+
+      const tiebreakPrompt=`Academic referee. Resolve conflicting MCQ answers. Return ONLY valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}]
+qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
+
+CONFLICTED QUESTIONS:
+${conflictQuestions}`;
+
+      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null);
+      try{
+        const resolved=extractJSON(tiebreakText);
+        resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
+      }catch(e){
+        // Keep pass1 answers if tiebreaker fails to parse
+      }
+    }
 
     setProgress(88,'Generating outputs...');
-    setStep(3,'active');
+    setStep(4,'active');
 
-    // ── STEP 3: BUILD FINAL DATA ──
+    // ── STEP 4: BUILD FINAL DATA ──
     const finalUniversity=document.getElementById('courseUniversity').value||extracted.courseUniversity||'';
     const finalFaculty=document.getElementById('courseFaculty').value||extracted.courseFaculty||'';
     const finalTitle=document.getElementById('courseTitle').value||extracted.courseTitle||'Unknown Course';
@@ -1093,7 +1262,7 @@ ${questionsForVerification}`;
     document.getElementById('jsonOutput').textContent=JSON.stringify(generatedJSON,null,2);
 
     setProgress(100,'Done!');
-    setStep(3,'done');
+    setStep(4,'done');
 
     setTimeout(()=>{
       document.getElementById('outputArea').style.display='block';
@@ -1136,12 +1305,12 @@ function renderSection1(questions,page=1){
   pageItems.forEach((q,pi)=>{
     const i=startIdx+pi;
     const li=document.createElement('li'); li.className='q-item';
-    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
-    li.innerHTML=`<div class="q-header">
-        <span class="q-num">Q${i+1}</span>
+    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
         <div class="q-text">${escHtml(q.question)}</div>
-      </div>
-      <div class="q-options">${opts}</div>`;
+        <div class="q-options">${opts}</div>
+      </div>`;
     ul.appendChild(li);
   });
   renderPager('pagerOnly',page,totalPages,(p)=>renderSection1(questions,p));
@@ -1160,19 +1329,19 @@ function renderSection2(questions,page=1){
     const opts=q.options.map(o=>{
       const isCorrect=o.label===q.correctLabel;
       return `<div class="q-opt${isCorrect?' correct-opt':''}">
-        <span class="opt-label">${o.label}</span>
+        <span class="opt-label">${o.label}.</span>
         <span class="opt-text">${escHtml(o.text)}</span>
       </div>`;
     }).join('');
-    li.innerHTML=`<div class="q-header">
-        <span class="q-num">Q${i+1}</span>
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
         <div class="q-text">${escHtml(q.question)}</div>
-      </div>
-      <div class="q-options">${opts}</div>
-      <div class="correct-tag">✓ &nbsp;Correct Answer: ${escHtml(q.correctLabel)}. &nbsp;${escHtml(q.correctText)}</div>
-      <div class="explanation-box">
-        <div class="exp-label">Explanation</div>
-        <p>${escHtml(q.explanation)}</p>
+        <div class="q-options">${opts}</div>
+        <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
+        <div class="explanation-box">
+          <div class="exp-label">Explanation</div>
+          <p>${escHtml(q.explanation)}</p>
+        </div>
       </div>`;
     ul.appendChild(li);
   });
@@ -1356,15 +1525,11 @@ async function downloadPDF(mode){
     doc.setFont('helvetica','bold');
     doc.setFontSize(9);
     doc.setTextColor(...cyan);
-    doc.text('EDUGLOBALFORGE',margin,8);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(7);
-    doc.setTextColor(...dimGray);
-    doc.text('Quiz Extractor · AI-Powered',margin,13.5);
+    doc.text('EDUGLOBALFORGE',margin,14);
     // Page number
     doc.setFontSize(7);
     doc.setTextColor(...dimGray);
-    doc.text(`Page ${pageNum}`,pageW-margin,13.5,{align:'right'});
+    doc.text(`Page ${pageNum}`,pageW-margin,14,{align:'right'});
     // Course info
     doc.setFont('helvetica','bold');
     doc.setFontSize(7.5);
@@ -1375,7 +1540,7 @@ async function downloadPDF(mode){
       courseInfo=courseInfo.slice(0,-1);
     }
     if(courseInfo!==docTitle) courseInfo=courseInfo.trim()+'…';
-    doc.text(courseInfo,pageW/2,13.5,{align:'center'});
+    doc.text(courseInfo,pageW/2,14,{align:'center'});
     return 30;
   }
 
@@ -1385,7 +1550,7 @@ async function downloadPDF(mode){
     doc.setFont('helvetica','normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...dimGray);
-    doc.text('Generated by EduGlobalForge Quiz Extractor · AI-Verified',pageW/2,pageH-4.5,{align:'center'});
+    doc.text('Generated by EduGlobalForge',pageW/2,pageH-4.5,{align:'center'});
   }
 
   function checkY(needed){
@@ -1453,15 +1618,15 @@ async function downloadPDF(mode){
   verifiedData.forEach((q,qi)=>{
     // Question number + text
     const qTextIndent=10; const qRightPad=8;
-    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,10);
-    const qBlockH=qLines.length*5.8+5;
+    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,11);
+    const qBlockH=qLines.length*6.5+8;
 
     // Estimate options height
     const optIndent=15; const optRightPad=10;
     let optH=0;
     const optLines=q.options.map(o=>{
-      const lines=splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,9);
-      optH+=lines.length*5+4;
+      const lines=splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,10);
+      optH+=lines.length*5.8+5;
       return lines;
     });
 
@@ -1471,10 +1636,10 @@ async function downloadPDF(mode){
     let tagH=0; let tagLines=[];
     const tagIndent=10; const tagRightPad=10;
     if(mode==='answers'){
-      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,8.5);
-      expH=expLines.length*4.8+17;
-      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,8);
-      tagH=tagLines.length*4.6+5;
+      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,10);
+      expH=expLines.length*5.5+19;
+      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,9.5);
+      tagH=tagLines.length*5.2+7;
     }
 
     const totalNeeded=qBlockH+optH+tagH+expH+12;
@@ -1488,10 +1653,10 @@ async function downloadPDF(mode){
     doc.roundedRect(margin,y,3,qBlockH+2,1,1,'F');
 
     doc.setFont('helvetica','bold');
-    doc.setFontSize(10);
+    doc.setFontSize(11);
     doc.setTextColor(...white);
     qLines.forEach((line,li)=>{
-      doc.text(line,margin+qTextIndent,y+6.5+li*5.8);
+      doc.text(line,margin+qTextIndent,y+7.5+li*6.5);
     });
     y+=qBlockH+5;
 
@@ -1499,7 +1664,7 @@ async function downloadPDF(mode){
     q.options.forEach((opt,oi)=>{
       const isCorrect=mode==='answers'&&opt.label===q.correctLabel;
       const lines=optLines[oi];
-      const optBlockH=lines.length*4.8+4;
+      const optBlockH=lines.length*5.5+5;
 
       if(isCorrect){
         doc.setFillColor(20,60,30);
@@ -1512,9 +1677,9 @@ async function downloadPDF(mode){
         doc.setFont('helvetica','normal');
         doc.setTextColor(...dimGray);
       }
-      doc.setFontSize(9);
+      doc.setFontSize(10);
       lines.forEach((line,li)=>{
-        doc.text(line,margin+optIndent,y+4.5+li*5);
+        doc.text(line,margin+optIndent,y+5.5+li*5.5);
       });
       y+=optBlockH+1;
     });
@@ -1526,10 +1691,10 @@ async function downloadPDF(mode){
       doc.setFillColor(20,50,30);
       doc.roundedRect(margin+6,y,contentW-6,tagH,2,2,'F');
       doc.setFont('helvetica','bold');
-      doc.setFontSize(8);
+      doc.setFontSize(9.5);
       doc.setTextColor(...green);
       tagLines.forEach((line,li)=>{
-        doc.text(line,margin+tagIndent,y+5+li*4.6);
+        doc.text(line,margin+tagIndent,y+6+li*5.2);
       });
       y+=tagH+3;
 
@@ -1540,14 +1705,14 @@ async function downloadPDF(mode){
       doc.setFillColor(...cyan);
       doc.roundedRect(margin+6,y,2.5,expH,1,1,'F');
       doc.setFont('helvetica','bold');
-      doc.setFontSize(7);
+      doc.setFontSize(8);
       doc.setTextColor(...cyan);
-      doc.text('EXPLANATION',margin+expIndent,y+6);
+      doc.text('EXPLANATION',margin+expIndent,y+7);
       doc.setFont('helvetica','normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(10);
       doc.setTextColor(180,200,240);
       expLines.forEach((line,li)=>{
-        doc.text(line,margin+expIndent,y+12+li*4.8);
+        doc.text(line,margin+expIndent,y+14+li*5.5);
       });
       y+=expH+4;
     }
@@ -1615,6 +1780,8 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
 //  INIT
 // ════════════════════════════════════════════════════════
 updateKeyStatus();
+renderKeySlots();
+updateActiveKeyBadge();
 </script>
 </body>
 </html>
