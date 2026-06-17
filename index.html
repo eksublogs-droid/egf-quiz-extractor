@@ -1334,33 +1334,29 @@ ${questionsForVerification}`;
       pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
 
       if(conflicts.length>0){
-        const keysForTiebreak=getKeys();
-        const TIEBREAK_MAX_PARALLEL=Math.min(keysForTiebreak.length*2,6);
-
-        async function resolveOneConflict(ci,slotIdx){
+        // Resolve ALL conflicts in ONE single API call — fastest possible
+        const conflictQuestionsText=conflicts.map(ci=>{
           const q=extractedData.questions[ci];
           const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-          const tiebreakPrompt=`Academic referee. Resolve this single conflicting MCQ answer. Return ONLY a valid JSON object, no markdown:
-{"qIndex":${ci},"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}
-Return ONLY the JSON object.
+          return `qIndex ${ci}:\n${q.question}\n${opts}`;
+        }).join('\n\n');
 
-QUESTION (index ${ci}):
-Q${ci+1}: ${q.question}
-${opts}`;
-          try{
-            const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,0,'gemini-2.5-flash');
-            const resolved=extractJSON(text);
-            return Array.isArray(resolved)?resolved[0]:resolved;
-          }catch(e){
-            return null;
-          }
-        }
+        const bulkTiebreakPrompt=`Academic referee. Resolve ALL conflicting MCQ answers below in one go.
+Return ONLY a valid JSON array, no markdown, no backticks:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"key reason in max 12 words"}]
+One object per question. qIndex must match exactly. Return ONLY the JSON array.
 
-        for(let i=0;i<conflicts.length;i+=TIEBREAK_MAX_PARALLEL){
-          const batch=conflicts.slice(i,i+TIEBREAK_MAX_PARALLEL);
-          setProgress(75,`Resolving conflicts (${Math.min(i+batch.length,conflicts.length)}/${conflicts.length})...`);
-          const results=await Promise.all(batch.map((ci,bi)=>resolveOneConflict(ci,i+bi)));
-          results.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
+CONFLICTING QUESTIONS:
+${conflictQuestionsText}`;
+
+        setProgress(78,`Resolving ${conflicts.length} conflict(s)...`);
+        try{
+          const tiebreakText=await geminiCall([{text:bulkTiebreakPrompt}],'You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ and end with ].',0,currentKeyIndex%getKeys().length,0,'gemini-2.5-flash');
+          const resolved=extractJSON(tiebreakText);
+          const resolvedArr=Array.isArray(resolved)?resolved:[resolved];
+          resolvedArr.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
+        }catch(e){
+          // If bulk tiebreak fails, keep pass1 answers — no blocking
         }
       }
 
