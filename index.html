@@ -1265,16 +1265,16 @@ Rules:
 
       const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
 Return ONLY a valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"max 12 words, key reason only"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Keep explanation under 12 words — no exceptions. Return ONLY the JSON array.
 
 QUESTIONS:
 ${questionsForVerification}`;
 
       const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
 Return ONLY a valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+[{"qIndex":0,"correctLabel":"A"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Do NOT include explanation or correctText — only qIndex and correctLabel. Return ONLY the JSON array.
 
 QUESTIONS:
 ${questionsForVerification}`;
