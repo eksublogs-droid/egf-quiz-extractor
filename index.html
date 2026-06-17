@@ -718,7 +718,7 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
-const GEMINI_MODEL  = 'gemini-flash-latest';
+const GEMINI_MODEL  = 'gemini-2.5-flash';
 
 // ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT — unlimited keys, live usage tracking
@@ -921,7 +921,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:65536},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:65536,thinkingConfig:{thinkingBudget:0}},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
