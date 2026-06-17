@@ -921,7 +921,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:4096},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:65536},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -963,6 +963,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   const decoder=new TextDecoder();
   let fullText='';
   let buffer='';
+  let finishReason='';
 
   while(true){
     const {done,value}=await reader.read();
@@ -978,6 +979,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
       try{
         const chunk=JSON.parse(json);
         const piece=chunk?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+        if(chunk?.candidates?.[0]?.finishReason) finishReason=chunk.candidates[0].finishReason;
         if(piece){
           fullText+=piece;
           // Update progress label with live character count
@@ -991,6 +993,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   }
 
   if(!fullText) throw new Error('Empty response from Gemini. Try again.');
+  if(finishReason==='MAX_TOKENS') throw new Error('Response was cut off (too many questions/images in one batch). Try uploading fewer images per batch.');
   return fullText;
 }
 
