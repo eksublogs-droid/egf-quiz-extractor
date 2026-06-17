@@ -325,7 +325,8 @@
     cursor:pointer;font-size:20px;transition:var(--transition);
   }
   .modal-close:hover{color:var(--white)}
-  .modal-wide{max-width:560px;max-height:88vh;overflow-y:auto}
+  .modal-wide{max-width:560px;max-height:88vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  body.modal-open{overflow:hidden;position:fixed;width:100%}
 
   /* ── ACTIVE KEY BANNER ──────────────────────────────── */
   .active-key-banner{
@@ -581,9 +582,9 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         Extract & Analyse
       </button>
-      <button class="btn btn-secondary" onclick="clearAll()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-        Clear All
+      <button class="btn btn-secondary" id="resetBtn" onclick="resetAll()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+        Reset
       </button>
     </div>
   </div>
@@ -718,6 +719,7 @@ let extractedData   = null; // { questions, courseUniversity, courseFaculty, cou
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
+let processingStage = 0;    // 0=fresh, 1=extracted, 2=verified
 const GEMINI_MODEL  = 'gemini-2.5-flash';
 
 // ════════════════════════════════════════════════════════
@@ -904,8 +906,8 @@ function renderActiveKeyBanner(){
   // Re-render slot list too, in case the modal is open, so the bars stay live
   if(modalKeyDraft.length) renderKeySlots();
 }
-function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); renderActiveKeyBanner(); document.getElementById('settingsModal').classList.add('open') }
-function closeSettings(){ document.getElementById('settingsModal').classList.remove('open') }
+function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); renderActiveKeyBanner(); document.getElementById('settingsModal').classList.add('open'); document.body.classList.add('modal-open'); }
+function closeSettings(){ document.getElementById('settingsModal').classList.remove('open'); document.body.classList.remove('modal-open'); }
 
 // ════════════════════════════════════════════════════════
 //  GEMINI API CALL WITH AUTO KEY ROTATION
@@ -1073,6 +1075,9 @@ function handleFiles(files){
   const arr=Array.from(files).filter(f=>f.type.startsWith('image/'));
   if(!arr.length){ toast('Only image files accepted (JPG, PNG, WEBP)','error'); return; }
   arr.forEach(f=>{ if(!uploadedFiles.find(x=>x.name===f.name&&x.size===f.size)) uploadedFiles.push(f); });
+  // New images uploaded — reset stage so extraction runs again from scratch
+  processingStage=0;
+  extractedData=null; verifiedData=null; generatedJSON=null;
   renderThumbs();
   document.getElementById('processBtn').disabled=uploadedFiles.length===0;
   document.getElementById('metaFields').style.display='block';
@@ -1098,9 +1103,10 @@ function removeFile(i){
   document.getElementById('processBtn').disabled=uploadedFiles.length===0;
   if(!uploadedFiles.length) document.getElementById('metaFields').style.display='none';
 }
-function clearAll(){
+function resetAll(){
   uploadedFiles=[];
   extractedData=null; verifiedData=null; generatedJSON=null;
+  processingStage=0;
   document.getElementById('thumbGrid').innerHTML='';
   document.getElementById('metaFields').style.display='none';
   document.getElementById('processBtn').disabled=true;
@@ -1164,33 +1170,40 @@ async function startProcessing(){
   if(!uploadedFiles.length){ toast('Upload at least one image first','error'); return; }
   if(!getKeys().length){ openSettings(); toast('Add at least one Gemini API key first','error'); return; }
 
-  // Reset output
-  document.getElementById('outputArea').style.display='none';
   document.getElementById('progressWrap').style.display='block';
   document.getElementById('processBtn').disabled=true;
-  document.getElementById('actionBtns').querySelector('.btn-secondary').disabled=true;
-  // Reset course fields to locked/empty state
-  ['courseUniversity','courseFaculty','courseTitle','courseSemester','courseYear'].forEach(id=>{
-    const el=document.getElementById(id);
-    el.value='';
-    el.disabled=true;
-  });
-  setProgress(0,'Preparing images...');
-  setStep(1,'active');
+  document.getElementById('resetBtn').disabled=true;
+
+  // If resuming after a partial failure, show where we're continuing from
+  if(processingStage===1){
+    toast('Resuming from Step 2 — verification...','info');
+  } else if(processingStage===0){
+    // Full fresh run: hide old output and reset course fields
+    document.getElementById('outputArea').style.display='none';
+    ['courseUniversity','courseFaculty','courseTitle','courseSemester','courseYear'].forEach(id=>{
+      const el=document.getElementById(id);
+      el.value='';
+      el.disabled=true;
+    });
+    setProgress(0,'Preparing images...');
+    setStep(1,'active');
+  }
 
   try{
-    // ── STEP 1: Convert all images to base64 in parallel ──
-    const base64Images=await Promise.all(uploadedFiles.map(fileToBase64));
 
-    setProgress(10,'Extracting questions & course info...');
-    setStep(1,'active');
+    // ══ STAGE 0→1: EXTRACTION ══════════════════════════════
+    if(processingStage===0){
+      // Convert all images to base64 in parallel
+      const base64Images=await Promise.all(uploadedFiles.map(fileToBase64));
 
-    // ── STEP 1: EXTRACTION CALL ──
-    const imageParts=base64Images.map((b64)=>({
-      inline_data:{mime_type:'image/jpeg',data:b64}
-    }));
+      setProgress(10,'Extracting questions & course info...');
+      setStep(1,'active');
 
-    const extractionPrompt=`Extract all exam questions and course info from this image.
+      const imageParts=base64Images.map((b64)=>({
+        inline_data:{mime_type:'image/jpeg',data:b64}
+      }));
+
+      const extractionPrompt=`Extract all exam questions and course info from this image.
 
 Output ONLY a raw JSON object. No text before it. No text after it. No markdown. No backticks. No explanation. Start your response with { and end with }.
 
@@ -1205,179 +1218,181 @@ Rules:
 - Questions with fewer than 4 options: include only what exists
 - YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
-    const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
+      const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
 
-    setProgress(30,'Parsing extraction results...');
-    let extracted;
-    try{
-      extracted=extractJSON(extractText);
-    }catch(e){
-      throw new Error('Failed to parse extraction response. Try again.');
-    }
-
-    if(!extracted.questions||!extracted.questions.length){
-      throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
-    }
-
-    // Pre-fill editable fields and enable them for editing
-    const uniInput=document.getElementById('courseUniversity');
-    const facInput=document.getElementById('courseFaculty');
-    const titleInput=document.getElementById('courseTitle');
-    const semInput=document.getElementById('courseSemester');
-    const yearInput=document.getElementById('courseYear');
-    uniInput.value=extracted.courseUniversity||'';
-    facInput.value=extracted.courseFaculty||'';
-    titleInput.value=extracted.courseTitle||'';
-    semInput.value=extracted.courseSemester||'';
-    yearInput.value=extracted.courseYear||'';
-    [uniInput,facInput,titleInput,semInput,yearInput].forEach(el=>el.disabled=false);
-
-    setProgress(35,'Verifying answers — Pass 1 & 2 (parallel)...');
-    setStep(2,'active');
-
-    // ── STEPS 3 & 4: ANSWER VERIFICATION PASS 1 & PASS 2 IN PARALLEL ──
-    const questionsForVerification=extracted.questions.map((q,i)=>{
-      const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-      return `Q${i+1}: ${q.question}\n${opts}`;
-    }).join('\n\n');
-
-    const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
-Return ONLY a valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
-
-QUESTIONS:
-${questionsForVerification}`;
-
-    const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
-Return ONLY a valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
-
-QUESTIONS:
-${questionsForVerification}`;
-
-    const keys=getKeys();
-    const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
-    const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.0-flash'),
-      geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.0-flash')
-    ]);
-
-    setProgress(70,'Resolving conflicts...');
-    setStep(3,'active');
-    let pass1;
-    try{
-      pass1=extractJSON(pass1Text);
-      if(!Array.isArray(pass1)) throw new Error('Not an array');
-    }catch(e){
-      // Retry pass1 sequentially if parallel parse failed
+      setProgress(30,'Parsing extraction results...');
+      let extracted;
       try{
-        const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.0-flash');
-        pass1=extractJSON(retryText);
-        if(!Array.isArray(pass1)) throw new Error('Not an array');
-      }catch(e2){
-        throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+        extracted=extractJSON(extractText);
+      }catch(e){
+        throw new Error('Failed to parse extraction response. Try again.');
       }
+
+      if(!extracted.questions||!extracted.questions.length){
+        throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
+      }
+
+      // Pre-fill editable fields and enable them for editing
+      document.getElementById('courseUniversity').value=extracted.courseUniversity||'';
+      document.getElementById('courseFaculty').value=extracted.courseFaculty||'';
+      document.getElementById('courseTitle').value=extracted.courseTitle||'';
+      document.getElementById('courseSemester').value=extracted.courseSemester||'';
+      document.getElementById('courseYear').value=extracted.courseYear||'';
+      ['courseUniversity','courseFaculty','courseTitle','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
+
+      // Save extraction result so we can resume from here if verification fails
+      extractedData={
+        questions:extracted.questions,
+        courseUniversity:extracted.courseUniversity||'',
+        courseFaculty:extracted.courseFaculty||'',
+        courseTitle:extracted.courseTitle||'',
+        courseSemester:extracted.courseSemester||'',
+        courseYear:extracted.courseYear||'',
+        docTitle:'',
+      };
+      processingStage=1; // extraction done — resume point
     }
 
-    let pass2;
-    try{
-      pass2=extractJSON(pass2Text);
-      if(!Array.isArray(pass2)) throw new Error('Not an array');
-    }catch(e){
-      // Retry pass2 if parallel parse failed
-      try{
-        const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.0-flash');
-        pass2=extractJSON(retryText);
-        if(!Array.isArray(pass2)) throw new Error('Not an array');
-      }catch(e2){
-        pass2=pass1; // fallback: use pass1 for both, tiebreaker will handle conflicts
-      }
-    }
+    // ══ STAGE 1→2: VERIFICATION ════════════════════════════
+    if(processingStage===1){
+      setProgress(35,'Verifying answers — Pass 1 & 2 (parallel)...');
+      setStep(2,'active');
 
-    setProgress(75,'Resolving conflicts...');
-    // ── STEP 3: CONFLICT RESOLUTION ──
-    const conflicts=[];
-    pass1.forEach((a1,idx)=>{
-      const a2=pass2.find(x=>x.qIndex===a1.qIndex);
-      if(a2&&a1.correctLabel!==a2.correctLabel) conflicts.push(a1.qIndex);
-    });
-
-    const finalAnswers=new Map();
-    pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
-
-    if(conflicts.length>0){
-      const keysForTiebreak=getKeys();
-      const TIEBREAK_MAX_PARALLEL=Math.min(keysForTiebreak.length*2,6); // safety cap so we never fire too many requests at once
-
-      async function resolveOneConflict(ci,slotIdx){
-        const q=extracted.questions[ci];
+      const questionsForVerification=extractedData.questions.map((q,i)=>{
         const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-        const tiebreakPrompt=`Academic referee. Resolve this single conflicting MCQ answer. Return ONLY a valid JSON object, no markdown:
+        return `Q${i+1}: ${q.question}\n${opts}`;
+      }).join('\n\n');
+
+      const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+      const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"concise accurate explanation"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+      const keys=getKeys();
+      const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
+      const [pass1Text,pass2Text]=await Promise.all([
+        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-1.5-flash'),
+        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-1.5-flash')
+      ]);
+
+      setProgress(70,'Resolving conflicts...');
+      setStep(3,'active');
+      let pass1;
+      try{
+        pass1=extractJSON(pass1Text);
+        if(!Array.isArray(pass1)) throw new Error('Not an array');
+      }catch(e){
+        try{
+          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-1.5-flash');
+          pass1=extractJSON(retryText);
+          if(!Array.isArray(pass1)) throw new Error('Not an array');
+        }catch(e2){
+          throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+        }
+      }
+
+      let pass2;
+      try{
+        pass2=extractJSON(pass2Text);
+        if(!Array.isArray(pass2)) throw new Error('Not an array');
+      }catch(e){
+        try{
+          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-1.5-flash');
+          pass2=extractJSON(retryText);
+          if(!Array.isArray(pass2)) throw new Error('Not an array');
+        }catch(e2){
+          pass2=pass1;
+        }
+      }
+
+      setProgress(75,'Resolving conflicts...');
+      const conflicts=[];
+      pass1.forEach((a1)=>{
+        const a2=pass2.find(x=>x.qIndex===a1.qIndex);
+        if(a2&&a1.correctLabel!==a2.correctLabel) conflicts.push(a1.qIndex);
+      });
+
+      const finalAnswers=new Map();
+      pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
+
+      if(conflicts.length>0){
+        const keysForTiebreak=getKeys();
+        const TIEBREAK_MAX_PARALLEL=Math.min(keysForTiebreak.length*2,6);
+
+        async function resolveOneConflict(ci,slotIdx){
+          const q=extractedData.questions[ci];
+          const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+          const tiebreakPrompt=`Academic referee. Resolve this single conflicting MCQ answer. Return ONLY a valid JSON object, no markdown:
 {"qIndex":${ci},"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}
 Return ONLY the JSON object.
 
 QUESTION (index ${ci}):
 Q${ci+1}: ${q.question}
 ${opts}`;
-        try{
-          const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,0,'gemini-2.0-flash');
-          const resolved=extractJSON(text);
-          return Array.isArray(resolved)?resolved[0]:resolved;
-        }catch(e){
-          return null; // keep pass1 answer for this question if its tiebreak fails
+          try{
+            const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,0,'gemini-1.5-flash');
+            const resolved=extractJSON(text);
+            return Array.isArray(resolved)?resolved[0]:resolved;
+          }catch(e){
+            return null;
+          }
+        }
+
+        for(let i=0;i<conflicts.length;i+=TIEBREAK_MAX_PARALLEL){
+          const batch=conflicts.slice(i,i+TIEBREAK_MAX_PARALLEL);
+          setProgress(75,`Resolving conflicts (${Math.min(i+batch.length,conflicts.length)}/${conflicts.length})...`);
+          const results=await Promise.all(batch.map((ci,bi)=>resolveOneConflict(ci,i+bi)));
+          results.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
         }
       }
 
-      // Run in batches of TIEBREAK_MAX_PARALLEL so all conflicts in a batch resolve simultaneously
-      for(let i=0;i<conflicts.length;i+=TIEBREAK_MAX_PARALLEL){
-        const batch=conflicts.slice(i,i+TIEBREAK_MAX_PARALLEL);
-        setProgress(75,`Resolving conflicts (${Math.min(i+batch.length,conflicts.length)}/${conflicts.length})...`);
-        const results=await Promise.all(batch.map((ci,bi)=>resolveOneConflict(ci,i+bi)));
-        results.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
-      }
+      setProgress(88,'Generating outputs...');
+      setStep(4,'active');
+
+      // Read course fields (user may have edited them after extraction)
+      const finalUniversity=document.getElementById('courseUniversity').value||extractedData.courseUniversity||'';
+      const finalFaculty=document.getElementById('courseFaculty').value||extractedData.courseFaculty||'';
+      const finalTitle=document.getElementById('courseTitle').value||extractedData.courseTitle||'Unknown Course';
+      const finalSemester=document.getElementById('courseSemester').value||extractedData.courseSemester||'';
+      const finalYear=document.getElementById('courseYear').value||extractedData.courseYear||'';
+
+      const docTitleParts=[finalUniversity,finalFaculty,finalTitle,finalSemester,finalYear].filter(Boolean);
+      const docTitle=docTitleParts.join(' · ');
+
+      verifiedData=extractedData.questions.map((q,i)=>{
+        const ans=finalAnswers.get(i)||{correctLabel:'A',correctText:q.options[0]?.text||'',explanation:'Answer not verified.'};
+        return{
+          question:q.question,
+          options:q.options,
+          correctLabel:ans.correctLabel,
+          correctText:ans.correctText,
+          explanation:ans.explanation,
+        };
+      });
+
+      extractedData.courseUniversity=finalUniversity;
+      extractedData.courseFaculty=finalFaculty;
+      extractedData.courseTitle=finalTitle;
+      extractedData.courseSemester=finalSemester;
+      extractedData.courseYear=finalYear;
+      extractedData.docTitle=docTitle;
+
+      generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
+      processingStage=2; // verification done
     }
 
-    setProgress(88,'Generating outputs...');
-    setStep(4,'active');
-
-    // ── STEP 4: BUILD FINAL DATA ──
-    const finalUniversity=document.getElementById('courseUniversity').value||extracted.courseUniversity||'';
-    const finalFaculty=document.getElementById('courseFaculty').value||extracted.courseFaculty||'';
-    const finalTitle=document.getElementById('courseTitle').value||extracted.courseTitle||'Unknown Course';
-    const finalSemester=document.getElementById('courseSemester').value||extracted.courseSemester||'';
-    const finalYear=document.getElementById('courseYear').value||extracted.courseYear||'';
-
-    // Combined document title used across PDF header, PDF filename, and JSON title
-    const docTitleParts=[finalUniversity,finalFaculty,finalTitle,finalSemester,finalYear].filter(Boolean);
-    const docTitle=docTitleParts.join(' · ');
-
-    verifiedData=extracted.questions.map((q,i)=>{
-      const ans=finalAnswers.get(i)||{correctLabel:'A',correctText:q.options[0]?.text||'',explanation:'Answer not verified.'};
-      return{
-        question:q.question,
-        options:q.options,
-        correctLabel:ans.correctLabel,
-        correctText:ans.correctText,
-        explanation:ans.explanation,
-      };
-    });
-
-    extractedData={
-      questions:extracted.questions,
-      courseUniversity:finalUniversity,
-      courseFaculty:finalFaculty,
-      courseTitle:finalTitle,
-      courseSemester:finalSemester,
-      courseYear:finalYear,
-      docTitle,
-    };
-
-    // Build JSON
-    generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
-
-    // Render UI
+    // ══ STAGE 2: RENDER OUTPUT ══════════════════════════════
     renderSection1(verifiedData);
     renderSection2(verifiedData);
     document.getElementById('jsonOutput').textContent=JSON.stringify(generatedJSON,null,2);
@@ -1393,11 +1408,13 @@ ${opts}`;
 
   }catch(err){
     toast(err.message,'error');
-    document.getElementById('progressLabel').textContent='Error: '+err.message;
+    // Show a helpful resume hint based on what stage we reached
+    const resumeHint=processingStage===1?' (tap Extract & Analyse again to resume from verification)':'';
+    document.getElementById('progressLabel').textContent='Error: '+err.message+resumeHint;
     setProgress(0,'');
   }finally{
     document.getElementById('processBtn').disabled=false;
-    document.getElementById('actionBtns').querySelector('.btn-secondary').disabled=false;
+    document.getElementById('resetBtn').disabled=false;
   }
 }
 
