@@ -41,7 +41,7 @@
     background:var(--navy);
     color:var(--white);
     font-family:var(--font-body);
-    font-size:17px;
+    font-size:16px;
     line-height:1.6;
     min-height:100vh;
     overflow-x:hidden;
@@ -60,8 +60,9 @@
   }
 
   /* ── LAYOUT ─────────────────────────────────────────── */
-  #app{position:relative;z-index:1;width:100%;padding:0 32px 80px}
+  #app{position:relative;z-index:1;width:100%;max-width:1400px;margin:0 auto;padding:0 32px 80px}
   @media(max-width:768px){#app{padding:0 16px 60px}}
+  @media(min-width:1400px){#app{max-width:1600px;padding:0 48px 80px}}
 
   /* ── HEADER ─────────────────────────────────────────── */
   header{
@@ -89,6 +90,20 @@
     display:flex;align-items:center;gap:7px;transition:var(--transition);
   }
   #settingsBtn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-glow)}
+
+  .header-key-pill{
+    display:flex;align-items:center;gap:7px;cursor:pointer;
+    background:var(--navy-card);border:1px solid var(--white-faint);
+    border-radius:999px;padding:7px 14px;
+    font-family:var(--font-mono);font-size:12px;color:var(--white-dim);
+    transition:var(--transition);white-space:nowrap;flex-shrink:0;
+  }
+  .header-key-pill span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .header-key-pill:hover{border-color:var(--blue);color:var(--white)}
+  .header-key-dot{width:7px;height:7px;border-radius:50%;background:var(--white-faint);flex-shrink:0}
+  .header-key-pill.ok .header-key-dot{background:var(--green);animation:pulse 2s infinite}
+  .header-key-pill.warn .header-key-dot{background:var(--gold);animation:pulse 2s infinite}
+  .header-key-pill.crit .header-key-dot{background:var(--red);animation:pulse 2s infinite}
 
   /* ── HERO ───────────────────────────────────────────── */
   .hero{text-align:center;margin-bottom:44px;padding:0 10px}
@@ -253,8 +268,8 @@
     flex-shrink:0;width:28px;padding-top:1px;
   }
   .q-content{flex:1}
-  .q-text{font-size:18px;color:var(--white);line-height:1.65;margin-bottom:10px;font-weight:500}
-  .q-options{display:flex;flex-direction:column;gap:6px}
+  .q-text{font-size:18px;color:var(--white);line-height:1.65;margin-bottom:12px;font-weight:500}
+  .q-options{display:flex;flex-direction:column;gap:8px}
   .q-opt{font-size:16px;color:var(--white-dim);display:flex;gap:9px;line-height:1.55}
   .q-opt .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0}
   .q-opt.correct-opt .opt-label{color:var(--green)}
@@ -273,13 +288,13 @@
     font-size:10px;font-family:var(--font-mono);color:var(--blue-bright);
     letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;
   }
-  .explanation-box p{font-size:15px;color:var(--white-dim);line-height:1.6}
+  .explanation-box p{font-size:14.5px;color:var(--white-dim);line-height:1.6}
 
   /* ── JSON SECTION ───────────────────────────────────── */
   #jsonOutput{
     background:var(--navy);border:1px solid var(--white-faint);
     border-radius:var(--radius-sm);padding:16px;
-    font-family:var(--font-mono);font-size:12px;color:var(--white-dim);
+    font-family:var(--font-mono);font-size:13.5px;color:var(--white-dim);
     max-height:360px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;
     line-height:1.6;
   }
@@ -299,8 +314,8 @@
   .modal-overlay.open{display:flex}
   .modal{
     background:var(--navy-card);border:1px solid var(--blue-line);
-    border-radius:var(--radius);width:100%;max-width:680px;
-    padding:32px;position:relative;max-height:90vh;overflow-y:auto;
+    border-radius:var(--radius);width:100%;max-width:500px;
+    padding:32px;position:relative;
   }
   .modal h2{font-family:var(--font-main);font-size:18px;font-weight:700;margin-bottom:6px}
   .modal .sub{color:var(--white-dim);font-size:13px;margin-bottom:24px}
@@ -310,26 +325,68 @@
     cursor:pointer;font-size:20px;transition:var(--transition);
   }
   .modal-close:hover{color:var(--white)}
-  .key-slot{margin-bottom:16px}
-  .key-slot label{
-    display:flex;align-items:center;gap:8px;margin-bottom:6px;
-    font-size:12px;color:var(--white-dim);font-family:var(--font-mono);
-    text-transform:uppercase;letter-spacing:.05em;
+  .modal-wide{max-width:560px;max-height:88vh;overflow-y:auto}
+
+  /* ── ACTIVE KEY BANNER ──────────────────────────────── */
+  .active-key-banner{
+    display:flex;align-items:center;gap:10px;
+    background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+    border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:20px;
   }
-  .key-slot label .key-badge{
-    padding:1px 8px;border-radius:999px;font-size:10px;font-weight:700;
+  .active-key-title{font-family:var(--font-main);font-size:13.5px;font-weight:600;color:var(--white)}
+  .active-key-sub{font-family:var(--font-mono);font-size:11.5px;color:var(--white-dim);margin-top:2px}
+
+  /* ── DYNAMIC KEY ROW ────────────────────────────────── */
+  .key-row{
+    border:1px solid var(--white-faint);border-radius:var(--radius-sm);
+    padding:14px;margin-bottom:12px;background:var(--navy);
+    transition:var(--transition);
   }
-  .key-mine{background:rgba(45,126,255,.2);color:var(--blue-bright)}
-  .key-bro{background:rgba(0,212,255,.15);color:var(--cyan)}
-  .key-sis{background:rgba(245,200,66,.15);color:var(--gold)}
-  .key-babe{background:rgba(34,197,94,.15);color:var(--green)}
-  .key-slot input{
-    width:100%;background:var(--navy);border:1px solid var(--white-faint);
+  .key-row.is-active{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .key-row-top input[type="text"]{
+    flex:0 0 110px;background:transparent;border:none;
+    color:var(--white-dim);font-family:var(--font-mono);font-size:11px;
+    text-transform:uppercase;letter-spacing:.05em;padding:2px 4px;outline:none;
+  }
+  .key-row-top input[type="text"]:focus{color:var(--white)}
+  .key-row-active-pill{
+    font-size:10px;font-family:var(--font-mono);font-weight:700;
+    background:rgba(34,197,94,.18);color:var(--green);
+    border-radius:999px;padding:2px 9px;flex-shrink:0;display:none;
+  }
+  .key-row.is-active .key-row-active-pill{display:inline-block}
+  .key-row-remove{
+    background:none;border:none;color:var(--white-faint);cursor:pointer;
+    font-size:15px;margin-left:auto;flex-shrink:0;transition:var(--transition);
+  }
+  .key-row-remove:hover{color:var(--red)}
+  .key-row input[type="password"]{
+    width:100%;background:var(--navy-hover);border:1px solid var(--white-faint);
     border-radius:var(--radius-sm);padding:9px 14px;
     color:var(--white);font-family:var(--font-mono);font-size:13px;
-    transition:var(--transition);outline:none;
+    transition:var(--transition);outline:none;margin-bottom:8px;
   }
-  .key-slot input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row input[type="password"]:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row-usage{display:flex;align-items:center;gap:9px}
+  .key-row-usage-track{
+    flex:1;height:6px;border-radius:999px;background:var(--white-faint);
+    overflow:hidden;
+  }
+  .key-row-usage-fill{height:100%;border-radius:999px;background:var(--green);transition:width .3s ease,background .3s ease}
+  .key-row-usage-label{font-family:var(--font-mono);font-size:11px;color:var(--white-dim);flex-shrink:0;white-space:nowrap}
+
+  .quota-row{margin-top:16px}
+  .quota-row label{display:block;font-size:12px;color:var(--white-dim);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .quota-row input{
+    width:140px;background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:9px 14px;
+    color:var(--white);font-family:var(--font-mono);font-size:13px;outline:none;
+  }
+  .quota-row input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .quota-note{font-size:11.5px;color:var(--white-faint);line-height:1.5;margin-top:8px}
+
+  .btn-block{width:100%;justify-content:center}
   .key-status{
     margin-top:12px;padding:10px 14px;border-radius:var(--radius-sm);
     background:var(--navy);border:1px solid var(--white-faint);
@@ -338,33 +395,7 @@
   }
   .key-indicator{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
 
-  /* ── KEY USAGE BARS ─────────────────────────────────── */
-  .usage-panel{margin-top:20px;border-top:1px solid var(--white-faint);padding-top:16px}
-  .usage-panel-title{font-size:12px;font-family:var(--font-mono);color:var(--blue-bright);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;display:flex;align-items:center;gap:7px}
-  .usage-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-  .usage-label{font-size:12px;font-family:var(--font-mono);color:var(--white-dim);width:80px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .usage-bar-bg{flex:1;height:8px;background:var(--white-faint);border-radius:999px;overflow:hidden}
-  .usage-bar-fill{height:100%;border-radius:999px;transition:width .5s ease}
-  .usage-pct{font-size:12px;font-family:var(--font-mono);color:var(--white-dim);width:38px;text-align:right;flex-shrink:0}
-  .usage-active-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
-  .usage-inactive-dot{width:8px;height:8px;border-radius:50%;background:var(--white-faint);flex-shrink:0}
-  /* Current API indicator in header area */
-  #activeKeyBadge{
-    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);
-    border-radius:999px;padding:3px 12px;font-size:12px;font-family:var(--font-mono);
-    color:var(--green);display:none;align-items:center;gap:6px;margin-top:6px;
-  }
-  #activeKeyBadge .ak-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
-  /* Dynamic key slots */
-  #keySlotsContainer{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  @media(max-width:560px){#keySlotsContainer{grid-template-columns:1fr}}
-  .key-slot-dyn{display:flex;flex-direction:column;gap:5px;background:var(--navy);border:1px solid var(--white-faint);border-radius:var(--radius-sm);padding:12px}
-  .key-slot-dyn label{font-size:11px;color:var(--white-dim);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;justify-content:space-between}
-  .key-slot-dyn input{background:transparent;border:none;border-top:1px solid var(--white-faint);padding:8px 0 0;color:var(--white);font-family:var(--font-mono);font-size:12px;outline:none;width:100%}
-  .key-remove-btn{background:none;border:none;color:var(--white-faint);cursor:pointer;font-size:14px;padding:0;line-height:1;transition:var(--transition)}
-  .key-remove-btn:hover{color:var(--red)}
-  .add-key-btn{display:flex;align-items:center;gap:8px;background:var(--navy);border:1px dashed var(--blue-line);color:var(--blue-bright);border-radius:var(--radius-sm);padding:12px;cursor:pointer;font-size:13px;font-family:var(--font-main);font-weight:600;transition:var(--transition);width:100%;justify-content:center;margin-top:8px}
-  .add-key-btn:hover{border-color:var(--blue);background:var(--blue-glow)}
+  /* ── TOAST ──────────────────────────────────────────── */
   #toast{
     position:fixed;bottom:28px;right:28px;z-index:2000;
     background:var(--navy-card);border:1px solid var(--blue-line);
@@ -453,7 +484,9 @@
     .section-header{padding:16px 18px}
     .section-body{padding:16px 18px}
     .card{padding:18px}
-    header{padding:18px 0 24px}
+    header{padding:18px 0 24px;flex-wrap:wrap;gap:14px}
+    header>div:last-child{width:100%;justify-content:space-between}
+    .header-key-pill{font-size:11.5px;padding:7px 12px;flex:1;justify-content:center}
     .hero h2{font-size:24px}
   }
 </style>
@@ -467,13 +500,19 @@
       <div class="logo-icon">EG</div>
       <div class="logo-text">
         <h1>EduGlobalForge</h1>
-        <div id="activeKeyBadge"><span class="ak-dot"></span><span id="activeKeyLabel">Key 1 Active</span></div>
+        <p>Quiz Extractor · AI-Powered</p>
       </div>
     </div>
-    <button id="settingsBtn" onclick="openSettings()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      API Keys
-    </button>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="headerKeyPill" class="header-key-pill" onclick="openSettings()" title="Click to manage API keys">
+        <span class="header-key-dot"></span>
+        <span id="headerKeyPillText">No key active</span>
+      </div>
+      <button id="settingsBtn" onclick="openSettings()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        API Keys
+      </button>
+    </div>
   </header>
 
   <!-- ── HERO ── -->
@@ -630,29 +669,35 @@
 
 <!-- ── SETTINGS MODAL ── -->
 <div class="modal-overlay" id="settingsModal">
-  <div class="modal">
+  <div class="modal modal-wide">
     <button class="modal-close" onclick="closeSettings()">✕</button>
     <h2>API Key Settings</h2>
-    <p class="sub">Add as many Gemini API keys as you want. Keys auto-rotate when one hits its daily quota.</p>
+    <p class="sub">Paste your Gemini API keys below. Keys auto-rotate when one hits its quota — add as many as you like.</p>
 
-    <div id="keySlotsContainer"></div>
-    <button class="add-key-btn" onclick="addKeySlot()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Add Another API Key
-    </button>
-
-    <!-- Usage panel -->
-    <div class="usage-panel" id="usagePanel" style="display:none">
-      <div class="usage-panel-title">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Real-time API Usage
+    <div class="active-key-banner" id="activeKeyBanner">
+      <div class="key-indicator"></div>
+      <div>
+        <div class="active-key-title" id="activeKeyTitle">No key active yet</div>
+        <div class="active-key-sub" id="activeKeySub">Add a key below to get started</div>
       </div>
-      <div id="usageBars"></div>
     </div>
 
-    <div class="key-status" style="margin-top:16px">
+    <div id="keySlotsContainer"></div>
+
+    <button class="btn btn-secondary btn-block" onclick="addKeySlot()" style="margin-top:6px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add another key
+    </button>
+
+    <div class="quota-row">
+      <label for="dailyQuotaInput">Daily request limit per key (for the usage bar)</label>
+      <input type="number" id="dailyQuotaInput" min="1" value="250"/>
+    </div>
+    <p class="quota-note">This app counts requests itself — Google doesn't expose live quota numbers through the API. Usage resets automatically 24 hours after a key's first use. Adjust the number above to match your actual plan.</p>
+
+    <div class="key-status">
       <div class="key-indicator"></div>
-      <span id="keyStatusText">No keys saved yet — add at least one key above.</span>
+      <span id="keyStatusText">No keys saved yet — paste at least one key above.</span>
     </div>
     <div style="display:flex;gap:10px;margin-top:20px">
       <button class="btn btn-primary" onclick="saveKeys()">Save Keys</button>
@@ -676,169 +721,190 @@ let currentKeyIndex = 0;
 const GEMINI_MODEL  = 'gemini-flash-latest';
 
 // ════════════════════════════════════════════════════════
-//  API KEY MANAGEMENT — UNLIMITED KEYS
+//  API KEY MANAGEMENT — unlimited keys, live usage tracking
 // ════════════════════════════════════════════════════════
-const KEY_COLORS=['#2D7EFF','#00D4FF','#F5C842','#22C55E','#EF4444','#A855F7','#F97316','#EC4899','#14B8A6','#84CC16'];
-const keyUsage={}; // { storageKey: { calls:0, errors:0 } }
+const KEYS_STORAGE   = 'egf_keys_v2';
+const QUOTA_STORAGE  = 'egf_daily_quota';
+const DEFAULT_QUOTA  = 250;
 
-function getAllStoredKeys(){
-  const keys=[];
-  let i=0;
-  while(true){
-    const k=localStorage.getItem('egf_key_'+i);
-    if(k===null) break;
-    keys.push({storageKey:'egf_key_'+i,value:k});
-    i++;
+// Each stored key record: { id, label, key, count, windowStart }
+// "windowStart" is the timestamp the current 24h usage window began.
+// Usage auto-resets once 24h have passed since windowStart.
+
+function loadKeyRecords(){
+  let records=[];
+  try{ records=JSON.parse(localStorage.getItem(KEYS_STORAGE)||'[]'); }catch(_){ records=[]; }
+
+  // Migrate legacy egf_key0..3 slots (one-time, silent) if v2 storage is empty
+  if(records.length===0){
+    const legacyLabels=['Your Key',"Bro's Key","Sis's Key","Babe's Key"];
+    ['key0','key1','key2','key3'].forEach((k,i)=>{
+      const v=localStorage.getItem('egf_'+k);
+      if(v){
+        records.push({id:'k'+Date.now()+i,label:legacyLabels[i],key:v,count:0,windowStart:Date.now()});
+        localStorage.removeItem('egf_'+k);
+      }
+    });
+    if(records.length) saveKeyRecords(records);
   }
-  return keys;
-}
 
-function saveAllStoredKeys(keyValues){
-  // Clear old
-  let i=0;
-  while(localStorage.getItem('egf_key_'+i)!==null){
-    localStorage.removeItem('egf_key_'+i);
-    i++;
-  }
-  // Save new
-  keyValues.forEach((v,idx)=>{ if(v.trim()) localStorage.setItem('egf_key_'+idx,v.trim()); });
+  // Reset usage windows that have expired (24h elapsed)
+  const now=Date.now();
+  let changed=false;
+  records.forEach(r=>{
+    if(!r.windowStart){ r.windowStart=now; changed=true; }
+    if(now-r.windowStart>=86400000){ r.count=0; r.windowStart=now; changed=true; }
+  });
+  if(changed) saveKeyRecords(records);
+  return records;
 }
-
+function saveKeyRecords(records){
+  localStorage.setItem(KEYS_STORAGE,JSON.stringify(records));
+}
+function getDailyQuota(){
+  const v=parseInt(localStorage.getItem(QUOTA_STORAGE),10);
+  return (Number.isFinite(v)&&v>0)?v:DEFAULT_QUOTA;
+}
+function setDailyQuota(v){
+  localStorage.setItem(QUOTA_STORAGE,String(v));
+}
 function getKeys(){
-  const keys=[];
-  let i=0;
-  while(true){
-    const k=localStorage.getItem('egf_key_'+i);
-    if(k===null) break;
-    if(k) keys.push(k);
-    i++;
-  }
-  return keys;
+  return loadKeyRecords().map(r=>r.key).filter(Boolean);
+}
+function recordKeyUsage(apiKey){
+  const records=loadKeyRecords();
+  const rec=records.find(r=>r.key===apiKey);
+  if(rec){ rec.count=(rec.count||0)+1; saveKeyRecords(records); }
+  renderActiveKeyBanner();
 }
 
-function renderKeySlots(preload=[]){
+// ── Modal rendering ──
+let modalKeyDraft=[]; // working copy while modal is open, committed on Save
+
+function renderKeySlots(){
   const container=document.getElementById('keySlotsContainer');
   container.innerHTML='';
-  const values=preload.length?preload:getAllStoredKeys().map(k=>k.value);
-  if(!values.length) values.push(''); // at least one slot
-  values.forEach((val,i)=>{ addKeySlot(val,i); });
-}
-
-let _slotCount=0;
-function addKeySlot(value='',idx=null){
-  const container=document.getElementById('keySlotsContainer');
-  const num=idx!==null?idx:container.children.length;
-  const color=KEY_COLORS[num%KEY_COLORS.length];
-  const div=document.createElement('div');
-  div.className='key-slot-dyn';
-  div.dataset.slot=num;
-  div.innerHTML=`
-    <label>
-      <span style="color:${color};font-weight:700">KEY ${num+1}</span>
-      <button class="key-remove-btn" onclick="removeKeySlot(this)" title="Remove">✕</button>
-    </label>
-    <input type="password" placeholder="AIza..." value="${value||''}"/>
-  `;
-  container.appendChild(div);
-}
-
-function removeKeySlot(btn){
-  const slot=btn.closest('.key-slot-dyn');
-  if(document.getElementById('keySlotsContainer').children.length<=1){
-    toast('At least one key slot required','error'); return;
+  if(modalKeyDraft.length===0){
+    container.innerHTML='<p style="font-size:12.5px;color:var(--white-faint);padding:6px 2px">No keys yet — click "Add another key" below.</p>';
+    return;
   }
-  slot.remove();
-  // Re-number labels
-  const slots=document.querySelectorAll('.key-slot-dyn');
-  slots.forEach((s,i)=>{
-    s.dataset.slot=i;
-    const lbl=s.querySelector('label span:first-child');
-    lbl.style.color=KEY_COLORS[i%KEY_COLORS.length];
-    lbl.textContent='KEY '+(i+1);
-  });
-}
-
-function saveKeys(){
-  const slots=document.querySelectorAll('.key-slot-dyn input');
-  const values=Array.from(slots).map(inp=>inp.value.trim());
-  saveAllStoredKeys(values);
-  currentKeyIndex=0;
-  updateKeyStatus();
-  renderUsageBars();
-  closeSettings();
-  toast('Keys saved successfully','success');
-}
-
-function loadKeysIntoModal(){
-  renderKeySlots();
-  renderUsageBars();
-}
-
-// ── USAGE TRACKING ──
-function trackUsage(keyValue){
-  const k='usage_'+keyValue.slice(-8);
-  if(!keyUsage[k]) keyUsage[k]={calls:0,errors:0};
-  keyUsage[k].calls++;
-  renderUsageBars();
-  updateActiveKeyBadge();
-}
-
-function trackError(keyValue){
-  const k='usage_'+keyValue.slice(-8);
-  if(!keyUsage[k]) keyUsage[k]={calls:0,errors:0};
-  keyUsage[k].errors++;
-  renderUsageBars();
-}
-
-function renderUsageBars(){
-  const keys=getKeys();
-  const panel=document.getElementById('usagePanel');
-  const barsDiv=document.getElementById('usageBars');
-  if(!keys.length){ panel.style.display='none'; return; }
-  panel.style.display='block';
-
-  // Max calls for scaling
-  const usageVals=keys.map(k=>(keyUsage['usage_'+k.slice(-8)]?.calls||0));
-  const maxCalls=Math.max(...usageVals,1);
-  // Daily free limit approx (Gemini flash: ~500 RPD free tier reference)
-  const DAILY_LIMIT=500;
-
-  barsDiv.innerHTML='';
-  keys.forEach((k,i)=>{
-    const sk='usage_'+k.slice(-8);
-    const calls=keyUsage[sk]?.calls||0;
-    const pct=Math.min(Math.round((calls/DAILY_LIMIT)*100),100);
-    const color=KEY_COLORS[i%KEY_COLORS.length];
-    const isActive=i===currentKeyIndex;
-    const barColor=pct>=90?'#EF4444':pct>=60?'#F5C842':color;
-    barsDiv.innerHTML+=`
-      <div class="usage-row">
-        <div class="${isActive?'usage-active-dot':'usage-inactive-dot'}"></div>
-        <div class="usage-label" title="Key ${i+1} (…${k.slice(-6)})">Key ${i+1}</div>
-        <div class="usage-bar-bg"><div class="usage-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
-        <div class="usage-pct" style="color:${barColor}">${pct}%</div>
+  const quota=getDailyQuota();
+  modalKeyDraft.forEach((rec,idx)=>{
+    const pct=Math.min(100,Math.round(((rec.count||0)/quota)*100));
+    const barColor=pct>=90?'var(--red)':pct>=60?'var(--gold)':'var(--green)';
+    const isActive=idx===currentKeyIndex%Math.max(modalKeyDraft.length,1);
+    const row=document.createElement('div');
+    row.className='key-row'+(isActive?' is-active':'');
+    row.innerHTML=`
+      <div class="key-row-top">
+        <input type="text" value="${escAttr(rec.label)}" placeholder="Label" data-field="label" data-idx="${idx}"/>
+        <span class="key-row-active-pill">ACTIVE NOW</span>
+        <button class="key-row-remove" type="button" data-idx="${idx}" title="Remove key">✕</button>
+      </div>
+      <input type="password" value="${escAttr(rec.key)}" placeholder="AIza..." data-field="key" data-idx="${idx}"/>
+      <div class="key-row-usage">
+        <div class="key-row-usage-track"><div class="key-row-usage-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <span class="key-row-usage-label">${rec.count||0} / ${quota} today (${pct}%)</span>
       </div>
     `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('[data-field="label"]').forEach(el=>{
+    el.addEventListener('input',e=>{ modalKeyDraft[+e.target.dataset.idx].label=e.target.value; });
+  });
+  container.querySelectorAll('[data-field="key"]').forEach(el=>{
+    el.addEventListener('input',e=>{ modalKeyDraft[+e.target.dataset.idx].key=e.target.value.trim(); });
+  });
+  container.querySelectorAll('.key-row-remove').forEach(el=>{
+    el.addEventListener('click',e=>{
+      modalKeyDraft.splice(+e.target.dataset.idx,1);
+      renderKeySlots();
+    });
   });
 }
-
-function updateActiveKeyBadge(){
-  const keys=getKeys();
-  const badge=document.getElementById('activeKeyBadge');
-  const label=document.getElementById('activeKeyLabel');
-  if(!keys.length){ badge.style.display='none'; return; }
-  badge.style.display='flex';
-  label.textContent=`Key ${currentKeyIndex+1} Active`;
+function escAttr(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
+function addKeySlot(){
+  modalKeyDraft.push({id:'k'+Date.now()+Math.random().toString(36).slice(2,6),label:'New Key',key:'',count:0,windowStart:Date.now()});
+  renderKeySlots();
+}
+function loadKeysIntoModal(){
+  // Deep copy current saved records into the draft so edits don't leak until Save
+  modalKeyDraft=loadKeyRecords().map(r=>({...r}));
+  document.getElementById('dailyQuotaInput').value=getDailyQuota();
+  renderKeySlots();
+}
+function saveKeys(){
+  const quotaVal=parseInt(document.getElementById('dailyQuotaInput').value,10);
+  if(Number.isFinite(quotaVal)&&quotaVal>0) setDailyQuota(quotaVal);
 
+  // Remember which key (by value, not index) was active before this save
+  const prevRecords=loadKeyRecords();
+  const prevActiveKey=prevRecords.length?prevRecords[currentKeyIndex%prevRecords.length].key:null;
+
+  // Drop fully-empty rows, keep usage counters for rows that already existed
+  const cleaned=modalKeyDraft
+    .filter(r=>r.key&&r.key.trim())
+    .map(r=>({id:r.id,label:(r.label||'Key').trim()||'Key',key:r.key.trim(),count:r.count||0,windowStart:r.windowStart||Date.now()}));
+
+  saveKeyRecords(cleaned);
+
+  // Re-anchor the active pointer to the SAME key as before (if it still exists),
+  // instead of trusting the old index — which would point at the wrong key
+  // after a removal/reorder.
+  if(cleaned.length===0){
+    currentKeyIndex=0;
+  } else {
+    const sameKeyIdx=prevActiveKey?cleaned.findIndex(r=>r.key===prevActiveKey):-1;
+    currentKeyIndex=sameKeyIdx!==-1?sameKeyIdx:0;
+  }
+
+  updateKeyStatus();
+  renderActiveKeyBanner();
+  closeSettings();
+  toast(`${cleaned.length} key${cleaned.length===1?'':'s'} saved`,'success');
+}
 function updateKeyStatus(){
   const keys=getKeys();
   const el=document.getElementById('keyStatusText');
-  if(keys.length===0) el.textContent='No keys saved yet — add at least one key above.';
-  else el.textContent=`${keys.length} key${keys.length>1?'s':''} saved · Currently using Key ${currentKeyIndex+1}.`;
-  updateActiveKeyBadge();
+  if(keys.length===0) el.textContent='No keys saved yet — paste at least one key above.';
+  else el.textContent=`${keys.length} key${keys.length>1?'s':''} saved. Currently using key ${currentKeyIndex+1} of ${keys.length}.`;
 }
-function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); document.getElementById('settingsModal').classList.add('open') }
+function renderActiveKeyBanner(){
+  const titleEl=document.getElementById('activeKeyTitle');
+  const subEl=document.getElementById('activeKeySub');
+  const pillEl=document.getElementById('headerKeyPill');
+  const pillTextEl=document.getElementById('headerKeyPillText');
+  const records=loadKeyRecords();
+
+  if(records.length===0){
+    if(titleEl) titleEl.textContent='No key active yet';
+    if(subEl) subEl.textContent='Add a key below to get started';
+    if(pillEl){ pillEl.className='header-key-pill'; }
+    if(pillTextEl) pillTextEl.textContent='No key active — tap to add';
+    return;
+  }
+
+  const idx=currentKeyIndex%records.length;
+  const rec=records[idx];
+  const quota=getDailyQuota();
+  const pct=Math.min(100,Math.round(((rec.count||0)/quota)*100));
+
+  if(titleEl) titleEl.textContent=`Active: ${rec.label} (key ${idx+1} of ${records.length})`;
+  if(subEl) subEl.textContent=`${rec.count||0} / ${quota} requests used today · ${pct}%`;
+
+  if(pillEl){
+    pillEl.className='header-key-pill '+(pct>=90?'crit':pct>=60?'warn':'ok');
+  }
+  if(pillTextEl){
+    pillTextEl.textContent=`${rec.label} · ${pct}% used (${idx+1}/${records.length})`;
+  }
+
+  // Re-render slot list too, in case the modal is open, so the bars stay live
+  if(modalKeyDraft.length) renderKeySlots();
+}
+function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); renderActiveKeyBanner(); document.getElementById('settingsModal').classList.add('open') }
 function closeSettings(){ document.getElementById('settingsModal').classList.remove('open') }
 
 // ════════════════════════════════════════════════════════
@@ -852,7 +918,6 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
   const keyIdx=(startKeyIdx+attempt)%keys.length;
   const apiKey=keys[keyIdx];
-  trackUsage(apiKey);
 
   const body={
     contents:[{role:'user',parts}],
@@ -871,13 +936,12 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
   }catch(e){ throw new Error('Network error: '+e.message) }
 
   if(res.status===429||res.status===503){
-    trackError(apiKey);
     if(attempt>=keys.length*2-1){
       const err=await res.json().catch(()=>({}));
       throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
-    updateActiveKeyBadge();
+    renderActiveKeyBanner();
     return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
   }
   if(!res.ok){
@@ -885,11 +949,14 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     const msg=err?.error?.message||res.statusText;
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
-      updateActiveKeyBadge();
+      renderActiveKeyBanner();
       return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
+
+  // Request succeeded against this key — count it toward today's usage
+  recordKeyUsage(apiKey);
 
   // ── Stream the response ──
   const reader=res.body.getReader();
@@ -1521,26 +1588,27 @@ async function downloadPDF(mode){
     // Blue accent line
     doc.setFillColor(...blue);
     doc.rect(0,21,pageW,1.5,'F');
-    // Logo text
+    // Logo text — brand name only, vertically centered in the 22mm banner
     doc.setFont('helvetica','bold');
-    doc.setFontSize(9);
+    doc.setFontSize(11);
     doc.setTextColor(...cyan);
-    doc.text('EDUGLOBALFORGE',margin,14);
+    doc.text('EDUGLOBALFORGE',margin,13.5);
     // Page number
+    doc.setFont('helvetica','normal');
     doc.setFontSize(7);
     doc.setTextColor(...dimGray);
-    doc.text(`Page ${pageNum}`,pageW-margin,14,{align:'right'});
+    doc.text(`Page ${pageNum}`,pageW-margin,13.5,{align:'right'});
     // Course info
     doc.setFont('helvetica','bold');
     doc.setFontSize(7.5);
     doc.setTextColor(...dimGray);
-    const courseInfoMaxW=pageW-margin*2-70;
+    const courseInfoMaxW=pageW-margin*2-95;
     let courseInfo=docTitle;
     while(doc.getStringUnitWidth(courseInfo)*7.5/doc.internal.scaleFactor>courseInfoMaxW && courseInfo.length>10){
       courseInfo=courseInfo.slice(0,-1);
     }
     if(courseInfo!==docTitle) courseInfo=courseInfo.trim()+'…';
-    doc.text(courseInfo,pageW/2,14,{align:'center'});
+    doc.text(courseInfo,pageW/2,13.5,{align:'center'});
     return 30;
   }
 
@@ -1550,14 +1618,15 @@ async function downloadPDF(mode){
     doc.setFont('helvetica','normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...dimGray);
-    doc.text('Generated by EduGlobalForge',pageW/2,pageH-4.5,{align:'center'});
+    doc.text('EDUGLOBALFORGE',pageW/2,pageH-4.5,{align:'center'});
   }
 
   function checkY(needed){
     if(y+needed>pageH-18){ addPage(); }
   }
 
-  function splitText(text,maxW,fontSize){
+  function splitText(text,maxW,fontSize,fontStyle){
+    doc.setFont('helvetica',fontStyle||'normal');
     doc.setFontSize(fontSize);
     return doc.splitTextToSize(text,maxW);
   }
@@ -1578,8 +1647,7 @@ async function downloadPDF(mode){
     // Pre-wrap all lines first so we can compute exact box height
     let wrappedCoverLines=[];
     coverLines.forEach(line=>{
-      doc.setFont('helvetica',line.bold?'bold':'normal');
-      const wrapped=splitText(line.text,contentW-22,line.size);
+      const wrapped=splitText(line.text,contentW-22,line.size,line.bold?'bold':'normal');
       wrapped.forEach(wl=>wrappedCoverLines.push({text:wl,size:line.size,bold:line.bold,color:line.color}));
     });
     const coverH=coverPadTop+wrappedCoverLines.length*coverLineGap+coverPadBottom;
@@ -1616,19 +1684,18 @@ async function downloadPDF(mode){
 
   // ── RENDER QUESTIONS ──
   verifiedData.forEach((q,qi)=>{
-    // Question number + text
+    // Question number + text (rendered bold)
     const qTextIndent=10; const qRightPad=8;
-    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,11);
-    const qBlockH=qLines.length*6.5+8;
+    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,11,'bold');
+    const qBlockH=qLines.length*6.4+5.5;
 
-    // Estimate options height
+    // Pre-measure each option's own height so we can page-break between options safely.
+    // Measured at 'bold' since the correct option renders bold (the wider weight) —
+    // this guarantees normal-weight options never overflow either, since normal is narrower.
     const optIndent=15; const optRightPad=10;
-    let optH=0;
-    const optLines=q.options.map(o=>{
-      const lines=splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,10);
-      optH+=lines.length*5.8+5;
-      return lines;
-    });
+    const optLines=q.options.map(o=>splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,10,'bold'));
+    const optBlockHeights=optLines.map(lines=>lines.length*5.4+4.5);
+    const optH=optBlockHeights.reduce((a,b)=>a+b+1,0);
 
     // Estimate explanation height (mode=answers only)
     const expIndent=14; const expRightPad=10;
@@ -1636,14 +1703,17 @@ async function downloadPDF(mode){
     let tagH=0; let tagLines=[];
     const tagIndent=10; const tagRightPad=10;
     if(mode==='answers'){
-      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,10);
-      expH=expLines.length*5.5+19;
-      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,9.5);
-      tagH=tagLines.length*5.2+7;
+      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,9.5,'normal');
+      expH=expLines.length*5.4+18;
+      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,9,'bold');
+      tagH=tagLines.length*5.1+5;
     }
 
+    // If the WHOLE question (question + options + tag + explanation) fits on a fresh
+    // page but not in the remaining space, break now so the question stays intact.
     const totalNeeded=qBlockH+optH+tagH+expH+12;
-    checkY(totalNeeded);
+    if(totalNeeded<=pageH-18-30 && y+totalNeeded>pageH-18){ addPage(); }
+    else { checkY(qBlockH+8); } // otherwise just ensure the question header itself has room
 
     // Question block background
     doc.setFillColor(15,25,50);
@@ -1656,19 +1726,22 @@ async function downloadPDF(mode){
     doc.setFontSize(11);
     doc.setTextColor(...white);
     qLines.forEach((line,li)=>{
-      doc.text(line,margin+qTextIndent,y+7.5+li*6.5);
+      doc.text(line,margin+qTextIndent,y+7+li*6.4);
     });
     y+=qBlockH+5;
 
-    // Options
+    // Options — each one is checked individually so a long option list can never
+    // be drawn past the bottom margin; if it would, we break the page first.
     q.options.forEach((opt,oi)=>{
       const isCorrect=mode==='answers'&&opt.label===q.correctLabel;
       const lines=optLines[oi];
-      const optBlockH=lines.length*5.5+5;
+      const optBlockH=optBlockHeights[oi];
+
+      checkY(optBlockH+2);
 
       if(isCorrect){
         doc.setFillColor(20,60,30);
-        doc.roundedRect(margin+6,y-1,contentW-6,optBlockH,1.5,1.5,'F');
+        doc.roundedRect(margin+6,y-1,contentW-12,optBlockH,1.5,1.5,'F');
         doc.setFillColor(...green);
         doc.roundedRect(margin+6,y-1,2.5,optBlockH,1,1,'F');
         doc.setFont('helvetica','bold');
@@ -1679,7 +1752,7 @@ async function downloadPDF(mode){
       }
       doc.setFontSize(10);
       lines.forEach((line,li)=>{
-        doc.text(line,margin+optIndent,y+5.5+li*5.5);
+        doc.text(line,margin+optIndent,y+4.8+li*5.4);
       });
       y+=optBlockH+1;
     });
@@ -1689,36 +1762,35 @@ async function downloadPDF(mode){
       y+=2;
       checkY(tagH+4);
       doc.setFillColor(20,50,30);
-      doc.roundedRect(margin+6,y,contentW-6,tagH,2,2,'F');
+      doc.roundedRect(margin+6,y,contentW-12,tagH,2,2,'F');
       doc.setFont('helvetica','bold');
-      doc.setFontSize(9.5);
+      doc.setFontSize(9);
       doc.setTextColor(...green);
       tagLines.forEach((line,li)=>{
-        doc.text(line,margin+tagIndent,y+6+li*5.2);
+        doc.text(line,margin+tagIndent,y+5.2+li*5.1);
       });
       y+=tagH+3;
 
       // Explanation box
       checkY(expH+4);
       doc.setFillColor(10,20,50);
-      doc.roundedRect(margin+6,y,contentW-6,expH,2,2,'F');
+      doc.roundedRect(margin+6,y,contentW-12,expH,2,2,'F');
       doc.setFillColor(...cyan);
       doc.roundedRect(margin+6,y,2.5,expH,1,1,'F');
       doc.setFont('helvetica','bold');
       doc.setFontSize(8);
       doc.setTextColor(...cyan);
-      doc.text('EXPLANATION',margin+expIndent,y+7);
+      doc.text('EXPLANATION',margin+expIndent,y+6.5);
       doc.setFont('helvetica','normal');
-      doc.setFontSize(10);
+      doc.setFontSize(9.5);
       doc.setTextColor(180,200,240);
       expLines.forEach((line,li)=>{
-        doc.text(line,margin+expIndent,y+14+li*5.5);
+        doc.text(line,margin+expIndent,y+13+li*5.4);
       });
       y+=expH+4;
     }
 
     y+=8; // gap between questions
-    checkY(0);
   });
 
   // ── FOOTER ON LAST PAGE ──
@@ -1780,8 +1852,7 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
 //  INIT
 // ════════════════════════════════════════════════════════
 updateKeyStatus();
-renderKeySlots();
-updateActiveKeyBadge();
+renderActiveKeyBanner();
 </script>
 </body>
 </html>
