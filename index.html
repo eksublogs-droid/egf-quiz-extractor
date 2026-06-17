@@ -1632,265 +1632,277 @@ async function downloadPDF(mode){
   const year=extractedData?.courseYear||'';
   const docTitle=extractedData?.docTitle||title;
   const pageW=210; const pageH=297;
-  const margin=18; const contentW=pageW-margin*2;
+  const margin=14; const contentW=pageW-margin*2;
 
-  // ── Colors ──
-  const navy=[10,15,30];
-  const blue=[45,126,255];
-  const cyan=[0,212,255];
-  const white=[240,244,255];
-  const dimGray=[138,153,187];
-  const green=[34,197,94];
-  const lightBlueBg=[15,23,42];
+  // ── Colors (RGB) ──
+  const navy      =[8,12,28];
+  const navyCard  =[15,23,42];
+  const navyDeep  =[10,18,50];
+  const blue      =[45,126,255];
+  const cyan      =[0,212,255];
+  const white     =[240,244,255];
+  const whiteDim  =[138,153,187];
+  const green     =[34,197,94];
+  const greenDark =[20,55,28];
+  const expBg     =[10,18,50];
+  const tagBg     =[18,46,26];
+  const divider   =[30,42,75];
 
   let y=0; let pageNum=1;
+
+  function st(text,maxW,fs,fw){
+    doc.setFont('helvetica',fw||'normal');
+    doc.setFontSize(fs);
+    return doc.splitTextToSize(String(text||''),maxW);
+  }
 
   function addPage(){
     drawFooter();
     doc.addPage();
     pageNum++;
-    y=drawPageHeader();
+    y=drawHeader();
     drawWatermark();
   }
 
+  function checkY(need){ if(y+need>pageH-16){ addPage(); } }
+
   function drawWatermark(){
     doc.saveGraphicsState();
-    doc.setGState(new doc.GState({opacity:0.06}));
+    doc.setGState(new doc.GState({opacity:0.045}));
     doc.setFont('helvetica','bold');
-    doc.setFontSize(13);
-    doc.setTextColor(120,150,210);
-    // Dense diagonal tiling — repeats well over 100 times per page
-    for(let wy=-10;wy<320;wy+=14){
-      for(let wx=-20;wx<240;wx+=38){
-        doc.text('Eduglobalforge',wx,wy,{angle:30});
+    doc.setFontSize(12);
+    doc.setTextColor(100,140,220);
+    for(let wy=-10;wy<310;wy+=15){
+      for(let wx=-20;wx<230;wx+=42){
+        doc.text('EDUGLOBALFORGE',wx,wy,{angle:28});
       }
     }
     doc.restoreGraphicsState();
   }
 
-  function drawPageHeader(){
-    // Top banner
+  function drawHeader(){
+    // Full-width dark banner
     doc.setFillColor(...navy);
-    doc.rect(0,0,pageW,22,'F');
-    // Blue accent line
+    doc.rect(0,0,pageW,20,'F');
+    // Blue bottom accent
     doc.setFillColor(...blue);
-    doc.rect(0,21,pageW,1.5,'F');
-    // Logo text — brand name only, vertically centered in the 22mm banner
+    doc.rect(0,19.5,pageW,1,'F');
+    // Brand name
     doc.setFont('helvetica','bold');
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.setTextColor(...cyan);
-    doc.text('EDUGLOBALFORGE',margin,13.5);
+    doc.text('EDUGLOBALFORGE',margin,12.5);
+    // Course info centered
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...whiteDim);
+    let cinfo=[university,faculty,title].filter(Boolean).join(' · ');
+    const maxCW=pageW-margin*2-70;
+    while(doc.getStringUnitWidth(cinfo)*6.5/doc.internal.scaleFactor>maxCW && cinfo.length>8) cinfo=cinfo.slice(0,-1);
+    if(cinfo!==([university,faculty,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
+    doc.text(cinfo,pageW/2,12.5,{align:'center'});
     // Page number
     doc.setFont('helvetica','normal');
-    doc.setFontSize(7);
-    doc.setTextColor(...dimGray);
-    doc.text(`Page ${pageNum}`,pageW-margin,13.5,{align:'right'});
-    // Course info
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...dimGray);
-    const courseInfoMaxW=pageW-margin*2-95;
-    let courseInfo=docTitle;
-    while(doc.getStringUnitWidth(courseInfo)*7.5/doc.internal.scaleFactor>courseInfoMaxW && courseInfo.length>10){
-      courseInfo=courseInfo.slice(0,-1);
-    }
-    if(courseInfo!==docTitle) courseInfo=courseInfo.trim()+'…';
-    doc.text(courseInfo,pageW/2,13.5,{align:'center'});
-    return 30;
+    doc.setFontSize(6.5);
+    doc.setTextColor(...whiteDim);
+    doc.text(`Page ${pageNum}`,pageW-margin,12.5,{align:'right'});
+    return 26;
   }
 
   function drawFooter(){
     doc.setFillColor(...navy);
-    doc.rect(0,pageH-12,pageW,12,'F');
+    doc.rect(0,pageH-10,pageW,10,'F');
     doc.setFont('helvetica','normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(...dimGray);
-    doc.text('EDUGLOBALFORGE',pageW/2,pageH-4.5,{align:'center'});
+    doc.setFontSize(6);
+    doc.setTextColor(...whiteDim);
+    doc.text('EDUGLOBALFORGE',pageW/2,pageH-3.5,{align:'center'});
   }
 
-  function checkY(needed){
-    if(y+needed>pageH-18){ addPage(); }
-  }
-
-  function splitText(text,maxW,fontSize,fontStyle){
-    doc.setFont('helvetica',fontStyle||'normal');
-    doc.setFontSize(fontSize);
-    return doc.splitTextToSize(text,maxW);
-  }
-
-  // ── TITLE PAGE SECTION ──
-  y=drawPageHeader();
+  // ── START ──
+  y=drawHeader();
   drawWatermark();
 
-  // Cover info block — university / faculty / course / semester / year, each on its own line if present
-  const coverLines=[];
-  if(university) coverLines.push({text:university,size:11,bold:true,color:white});
-  if(faculty)    coverLines.push({text:faculty,size:9,bold:false,color:dimGray});
-  const courseLine=[title,semester,year].filter(Boolean).join(' · ');
-  if(courseLine) coverLines.push({text:courseLine,size:9,bold:true,color:[120,180,255]});
+  // ── COVER INFO BLOCK ──
+  const coverRows=[];
+  if(university) coverRows.push({text:university, fs:11, fw:'bold', color:white});
+  if(faculty)    coverRows.push({text:faculty,    fs:8.5,fw:'normal',color:whiteDim});
+  const cline=[title,semester,year].filter(Boolean).join(' · ');
+  if(cline)      coverRows.push({text:cline,      fs:8.5,fw:'bold', color:[100,170,255]});
 
-  if(coverLines.length){
-    const coverPadTop=8; const coverLineGap=6.5; const coverPadBottom=6;
-    // Pre-wrap all lines first so we can compute exact box height
-    let wrappedCoverLines=[];
-    coverLines.forEach(line=>{
-      const wrapped=splitText(line.text,contentW-22,line.size,line.bold?'bold':'normal');
-      wrapped.forEach(wl=>wrappedCoverLines.push({text:wl,size:line.size,bold:line.bold,color:line.color}));
+  if(coverRows.length){
+    const padT=7; const lh=6.2; const padB=6;
+    let wrapped=[];
+    coverRows.forEach(r=>{
+      st(r.text,contentW-20,r.fs,r.fw).forEach(l=>wrapped.push({...r,text:l}));
     });
-    const coverH=coverPadTop+wrappedCoverLines.length*coverLineGap+coverPadBottom;
-    doc.setFillColor(...lightBlueBg);
-    doc.roundedRect(margin,y,contentW,coverH,3,3,'F');
+    const bh=padT+wrapped.length*lh+padB;
+    doc.setFillColor(...navyCard);
+    doc.roundedRect(margin,y,contentW,bh,2,2,'F');
     doc.setFillColor(...cyan);
-    doc.roundedRect(margin,y,4,coverH,2,2,'F');
-    wrappedCoverLines.forEach((line,li)=>{
-      doc.setFont('helvetica',line.bold?'bold':'normal');
-      doc.setFontSize(line.size);
-      doc.setTextColor(...line.color);
-      doc.text(line.text,margin+12,y+coverPadTop+li*coverLineGap);
+    doc.roundedRect(margin,y,3.5,bh,1.5,1.5,'F');
+    wrapped.forEach((r,i)=>{
+      doc.setFont('helvetica',r.fw);
+      doc.setFontSize(r.fs);
+      doc.setTextColor(...r.color);
+      doc.text(r.text,margin+10,y+padT+i*lh);
     });
-    y+=coverH+8;
+    y+=bh+6;
   }
 
-  // Section title box
-  doc.setFillColor(...lightBlueBg);
-  doc.roundedRect(margin,y,contentW,24,3,3,'F');
+  // ── SECTION HEADER BADGE ──
+  const isAnswers=mode==='answers';
+  const badgeLabel=isAnswers?'QUESTIONS + ANSWERS + EXPLANATIONS':'QUESTIONS ONLY';
+  const badgeSub=`${verifiedData.length} Questions · ${title}${year?' · '+year:''}`;
+  // Circle badge
+  const badgeR=5.5;
+  const badgeCx=margin+badgeR+1;
+  const badgeCy=y+9;
   doc.setFillColor(...blue);
-  doc.roundedRect(margin,y,4,24,2,2,'F');
+  doc.circle(badgeCx,badgeCy,badgeR,'F');
   doc.setFont('helvetica','bold');
-  const headerLabel=mode==='questions'?'QUESTIONS ONLY':'QUESTIONS + ANSWERS + EXPLANATIONS';
-  let headerSize=13;
-  while(doc.getStringUnitWidth(headerLabel)*headerSize/doc.internal.scaleFactor>contentW-20 && headerSize>9){ headerSize-=0.5; }
-  doc.setFontSize(headerSize);
+  doc.setFontSize(7);
+  doc.setTextColor(255,255,255);
+  doc.text(isAnswers?'2':'1',badgeCx,badgeCy+2.5,{align:'center'});
+  // Label
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
   doc.setTextColor(...white);
-  doc.text(headerLabel,margin+10,y+10);
+  doc.text(badgeLabel,margin+14,badgeCy+0.5);
   doc.setFont('helvetica','normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...dimGray);
-  doc.text(`${verifiedData.length} Questions · ${title}${year?' · '+year:''}`,margin+10,y+18);
-  y+=32;
+  doc.setFontSize(7.5);
+  doc.setTextColor(...whiteDim);
+  doc.text(badgeSub,margin+14,badgeCy+6);
+  // Download badge pill (decorative, matches UI)
+  const pillTxt='Download PDF';
+  doc.setFillColor(...blue);
+  doc.roundedRect(margin+14,badgeCy+8.5,28,6,3,3,'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(7);
+  doc.setTextColor(255,255,255);
+  doc.text(pillTxt,margin+28,badgeCy+12.8,{align:'center'});
+  y=badgeCy+20;
+
+  // Horizontal divider
+  doc.setFillColor(...divider);
+  doc.rect(margin,y,contentW,0.5,'F');
+  y+=5;
 
   // ── RENDER QUESTIONS ──
   verifiedData.forEach((q,qi)=>{
-    // Question number + text (rendered bold)
-    const qTextIndent=10; const qRightPad=8;
-    const qLines=splitText(`${qi+1}. ${q.question}`,contentW-qTextIndent-qRightPad,11,'bold');
-    const qBlockH=qLines.length*6.4+5.5;
+    const qNum=String(qi+1).padStart(2,'0');
+    const qTextMaxW=contentW-18;
+    const qLines=st(q.question,qTextMaxW,11,'bold');
+    const qBlockH=qLines.length*6.2+8;
 
-    // Pre-measure each option's own height so we can page-break between options safely.
-    // Measured at 'bold' since the correct option renders bold (the wider weight) —
-    // this guarantees normal-weight options never overflow either, since normal is narrower.
-    const optIndent=15; const optRightPad=10;
-    const optLines=q.options.map(o=>splitText(`${o.label}.  ${o.text}`,contentW-optIndent-optRightPad,10,'bold'));
-    const optBlockHeights=optLines.map(lines=>lines.length*5.4+4.5);
-    const optH=optBlockHeights.reduce((a,b)=>a+b+1,0);
+    // Options
+    const optMaxW=contentW-22;
+    const optLinesList=q.options.map(o=>st(`${o.label}.  ${o.text}`,optMaxW,10,'bold'));
+    const optHeights=optLinesList.map(ls=>ls.length*5.3+5);
+    const totalOptH=optHeights.reduce((a,b)=>a+b+1.5,0);
 
-    // Estimate explanation height (mode=answers only)
-    const expIndent=14; const expRightPad=10;
-    let expH=0; let expLines=[];
-    let tagH=0; let tagLines=[];
-    const tagIndent=10; const tagRightPad=10;
-    if(mode==='answers'){
-      expLines=splitText(q.explanation,contentW-expIndent-expRightPad,9.5,'normal');
-      expH=expLines.length*5.4+18;
-      tagLines=splitText(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-tagIndent-tagRightPad,9,'bold');
-      tagH=tagLines.length*5.1+5;
+    // Explanation & tag
+    let expLines=[],expH=0,tagLines=[],tagH=0;
+    if(isAnswers){
+      expLines=st(q.explanation,contentW-20,9,'normal');
+      expH=expLines.length*5.2+16;
+      tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-20,9,'bold');
+      tagH=tagLines.length*5+6;
     }
 
-    // If the WHOLE question (question + options + tag + explanation) fits on a fresh
-    // page but not in the remaining space, break now so the question stays intact.
-    const totalNeeded=qBlockH+optH+tagH+expH+12;
-    if(totalNeeded<=pageH-18-30 && y+totalNeeded>pageH-18){ addPage(); }
-    else { checkY(qBlockH+8); } // otherwise just ensure the question header itself has room
+    const total=qBlockH+totalOptH+tagH+expH+10;
+    if(total<pageH-30 && y+total>pageH-16){ addPage(); }
+    else { checkY(qBlockH+6); }
 
-    // Question block background
-    doc.setFillColor(15,25,50);
-    doc.roundedRect(margin,y,contentW,qBlockH+2,2,2,'F');
-    // Blue left bar
+    // ── Question block ──
+    doc.setFillColor(...navyCard);
+    doc.roundedRect(margin,y,contentW,qBlockH,2,2,'F');
     doc.setFillColor(...blue);
-    doc.roundedRect(margin,y,3,qBlockH+2,1,1,'F');
-
+    doc.roundedRect(margin,y,3,qBlockH,1.5,1.5,'F');
+    // Number in superscript style (small, dim)
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...whiteDim);
+    doc.text(qNum,margin+5.5,y+5.5);
+    // Question text
     doc.setFont('helvetica','bold');
     doc.setFontSize(11);
     doc.setTextColor(...white);
-    qLines.forEach((line,li)=>{
-      doc.text(line,margin+qTextIndent,y+7+li*6.4);
+    qLines.forEach((ln,li)=>{
+      doc.text(ln,margin+10,y+6+li*6.2);
     });
-    y+=qBlockH+5;
+    y+=qBlockH+2;
 
-    // Options — each one is checked individually so a long option list can never
-    // be drawn past the bottom margin; if it would, we break the page first.
+    // ── Options ──
     q.options.forEach((opt,oi)=>{
-      const isCorrect=mode==='answers'&&opt.label===q.correctLabel;
-      const lines=optLines[oi];
-      const optBlockH=optBlockHeights[oi];
-
-      checkY(optBlockH+2);
-
+      const isCorrect=isAnswers&&opt.label===q.correctLabel;
+      const lines=optLinesList[oi];
+      const oh=optHeights[oi];
+      checkY(oh+2);
       if(isCorrect){
-        doc.setFillColor(20,60,30);
-        doc.roundedRect(margin+6,y-1,contentW-12,optBlockH,1.5,1.5,'F');
+        doc.setFillColor(...greenDark);
+        doc.roundedRect(margin+4,y-0.5,contentW-8,oh,1.5,1.5,'F');
         doc.setFillColor(...green);
-        doc.roundedRect(margin+6,y-1,2.5,optBlockH,1,1,'F');
+        doc.roundedRect(margin+4,y-0.5,2.5,oh,1,1,'F');
         doc.setFont('helvetica','bold');
         doc.setTextColor(...green);
       } else {
         doc.setFont('helvetica','normal');
-        doc.setTextColor(...dimGray);
+        doc.setTextColor(...whiteDim);
       }
       doc.setFontSize(10);
-      lines.forEach((line,li)=>{
-        doc.text(line,margin+optIndent,y+4.8+li*5.4);
+      lines.forEach((ln,li)=>{
+        doc.text(ln,margin+10,y+4.5+li*5.3);
       });
-      y+=optBlockH+1;
+      y+=oh+1.5;
     });
 
-    // Answer tag (mode=answers)
-    if(mode==='answers'){
+    // ── Answer Tag ──
+    if(isAnswers){
       y+=2;
-      checkY(tagH+4);
-      doc.setFillColor(20,50,30);
-      doc.roundedRect(margin+6,y,contentW-12,tagH,2,2,'F');
+      checkY(tagH+expH+6);
+      // Green correct badge
+      doc.setFillColor(...tagBg);
+      doc.roundedRect(margin+4,y,contentW-8,tagH,2,2,'F');
+      doc.setFillColor(...green);
+      doc.roundedRect(margin+4,y,2.5,tagH,1,1,'F');
       doc.setFont('helvetica','bold');
       doc.setFontSize(9);
       doc.setTextColor(...green);
-      tagLines.forEach((line,li)=>{
-        doc.text(line,margin+tagIndent,y+5.2+li*5.1);
+      tagLines.forEach((ln,li)=>{
+        doc.text(ln,margin+9,y+5+li*5);
       });
-      y+=tagH+3;
+      y+=tagH+2;
 
-      // Explanation box
-      checkY(expH+4);
-      doc.setFillColor(10,20,50);
-      doc.roundedRect(margin+6,y,contentW-12,expH,2,2,'F');
+      // ── Explanation ──
+      checkY(expH+2);
+      doc.setFillColor(...expBg);
+      doc.roundedRect(margin+4,y,contentW-8,expH,2,2,'F');
       doc.setFillColor(...cyan);
-      doc.roundedRect(margin+6,y,2.5,expH,1,1,'F');
+      doc.roundedRect(margin+4,y,2.5,expH,1,1,'F');
       doc.setFont('helvetica','bold');
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
       doc.setTextColor(...cyan);
-      doc.text('EXPLANATION',margin+expIndent,y+6.5);
+      doc.text('EXPLANATION',margin+9,y+6);
       doc.setFont('helvetica','normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(180,200,240);
-      expLines.forEach((line,li)=>{
-        doc.text(line,margin+expIndent,y+13+li*5.4);
+      doc.setFontSize(9);
+      doc.setTextColor(175,200,245);
+      expLines.forEach((ln,li)=>{
+        doc.text(ln,margin+9,y+12+li*5.2);
       });
-      y+=expH+4;
+      y+=expH+2;
     }
 
-    y+=8; // gap between questions
+    // Divider between questions
+    doc.setFillColor(...divider);
+    doc.rect(margin,y+2,contentW,0.4,'F');
+    y+=7;
   });
 
   // ── FOOTER ON LAST PAGE ──
   drawFooter();
-  // Footer on all pages (go back and add)
-  // Actually jsPDF doesn't support "all pages" easily without tracking — handled per page via addPage override
-  // Add footer to first page too
-  // We call drawFooter after each page is complete
 
-  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
-  const fname=mode==='questions'
-    ?`${fnameBase}_Questions.pdf`
-    :`${fnameBase}_QA.pdf`;
+  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s]/g,'').replace(/\s+/g,'_');
+  const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
   doc.save(fname);
   toast(`PDF downloaded: ${fname}`,'success');
 }
