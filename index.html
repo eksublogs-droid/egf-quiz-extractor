@@ -910,7 +910,7 @@ function closeSettings(){ document.getElementById('settingsModal').classList.rem
 // ════════════════════════════════════════════════════════
 //  GEMINI API CALL WITH AUTO KEY ROTATION
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0){
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0, model=GEMINI_MODEL){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
   if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
@@ -919,9 +919,13 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
   const keyIdx=(startKeyIdx+attempt)%keys.length;
   const apiKey=keys[keyIdx];
 
+  const is25Flash=model.includes('2.5');
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:65536,thinkingConfig:{thinkingBudget}},
+    generationConfig:Object.assign(
+      {temperature:0.1,topP:0.95,maxOutputTokens:65536},
+      is25Flash?{thinkingConfig:{thinkingBudget}}:{}
+    ),
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -930,7 +934,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
   let res;
   try{
     res=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
     );
   }catch(e){ throw new Error('Network error: '+e.message) }
@@ -942,7 +946,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
     renderActiveKeyBanner();
-    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget);
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
@@ -950,7 +954,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
       renderActiveKeyBanner();
-      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget);
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -1256,8 +1260,8 @@ ${questionsForVerification}`;
     const keys=getKeys();
     const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
     const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0),
-      geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0)
+      geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.0-flash'),
+      geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.0-flash')
     ]);
 
     setProgress(70,'Resolving conflicts...');
@@ -1269,7 +1273,7 @@ ${questionsForVerification}`;
     }catch(e){
       // Retry pass1 sequentially if parallel parse failed
       try{
-        const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0);
+        const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.0-flash');
         pass1=extractJSON(retryText);
         if(!Array.isArray(pass1)) throw new Error('Not an array');
       }catch(e2){
@@ -1284,7 +1288,7 @@ ${questionsForVerification}`;
     }catch(e){
       // Retry pass2 if parallel parse failed
       try{
-        const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0);
+        const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.0-flash');
         pass2=extractJSON(retryText);
         if(!Array.isArray(pass2)) throw new Error('Not an array');
       }catch(e2){
@@ -1318,7 +1322,7 @@ QUESTION (index ${ci}):
 Q${ci+1}: ${q.question}
 ${opts}`;
         try{
-          const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,2048);
+          const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,0,'gemini-2.0-flash');
           const resolved=extractJSON(text);
           return Array.isArray(resolved)?resolved[0]:resolved;
         }catch(e){
