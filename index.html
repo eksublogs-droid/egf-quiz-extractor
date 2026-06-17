@@ -423,6 +423,9 @@
     border:1px solid var(--white-faint);border-radius:var(--radius-sm);
     padding:10px 12px;margin-bottom:20px;
   }
+  .jump-btn.active-tab{
+    border-color:var(--blue);color:var(--white);background:var(--blue-glow);
+  }
   .jump-btn{
     display:inline-flex;align-items:center;gap:7px;
     background:var(--navy-hover);border:1px solid var(--white-faint);
@@ -593,15 +596,15 @@
   <div id="outputArea" style="display:none">
     <div class="divider"></div>
 
-    <!-- JUMP NAV -->
+    <!-- JUMP NAV / TAB BAR -->
     <div id="jumpNav" class="jump-nav">
-      <button class="jump-btn" onclick="jumpToSection('sectionQuestions')">
+      <button class="jump-btn active-tab" id="tabBtn_sectionQuestions" onclick="showTab('sectionQuestions')">
         <span class="jump-dot s1dot"></span> Questions Only
       </button>
-      <button class="jump-btn" onclick="jumpToSection('sectionAnswers')">
+      <button class="jump-btn" id="tabBtn_sectionAnswers" onclick="showTab('sectionAnswers')">
         <span class="jump-dot s2dot"></span> Answers + Explanations
       </button>
-      <button class="jump-btn" onclick="jumpToSection('sectionJSON')">
+      <button class="jump-btn" id="tabBtn_sectionJSON" onclick="showTab('sectionJSON')">
         <span class="jump-dot s3dot"></span> JSON Export
       </button>
     </div>
@@ -1211,8 +1214,10 @@ Output ONLY a raw JSON object. No text before it. No text after it. No markdown.
 
 Rules:
 - Extract EVERY SINGLE question from ALL images — do not skip any question
-- Scan every image completely from top to bottom; do not stop early
-- The question text MUST NOT include any leading number or numbering prefix (e.g. strip "26.", "50.", "Q3." etc. from the start of each question text)
+- Scan every image completely from top to bottom and left to right; count every numbered item
+- The question text MUST NOT include any leading number or numbering prefix (strip "26.", "50.", "Q3." etc.)
+- CRITICAL: The question text must ONLY contain the question stem. If the image shows options inline inside the question text like "(a) option1 (b) option2 (c) option3", do NOT include those in the question field — extract them separately as options A, B, C, D instead
+- Each option text should be clean — just the option content, no label prefix like "(a)" or "A."
 - Normalize options to labels A B C D (E if present)
 - Use "" for any course field not found
 - courseTitle defaults to "Unknown Course" if missing
@@ -1405,7 +1410,8 @@ ${conflictQuestionsText}`;
 
     setTimeout(()=>{
       document.getElementById('outputArea').style.display='block';
-      document.getElementById('outputArea').scrollIntoView({behavior:'smooth',block:'start'});
+      showTab('sectionQuestions');
+      document.getElementById('jumpNav').scrollIntoView({behavior:'smooth',block:'start'});
       toast(`${verifiedData.length} questions extracted and verified successfully!`,'success');
     },500);
 
@@ -1424,10 +1430,17 @@ ${conflictQuestionsText}`;
 // ════════════════════════════════════════════════════════
 //  JUMP NAV
 // ════════════════════════════════════════════════════════
-function jumpToSection(id){
-  const el=document.getElementById(id);
-  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+function showTab(id){
+  ['sectionQuestions','sectionAnswers','sectionJSON'].forEach(sid=>{
+    const sec=document.getElementById(sid);
+    const btn=document.getElementById('tabBtn_'+sid);
+    if(sec) sec.style.display=sid===id?'block':'none';
+    if(btn) btn.classList.toggle('active-tab',sid===id);
+  });
+  // Scroll jump nav into view so user sees the section immediately
+  document.getElementById('jumpNav').scrollIntoView({behavior:'smooth',block:'start'});
 }
+function jumpToSection(id){ showTab(id); }
 
 // ════════════════════════════════════════════════════════
 //  RENDER SECTIONS (with pagination)
