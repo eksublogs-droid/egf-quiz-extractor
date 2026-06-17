@@ -910,7 +910,7 @@ function closeSettings(){ document.getElementById('settingsModal').classList.rem
 // ════════════════════════════════════════════════════════
 //  GEMINI API CALL WITH AUTO KEY ROTATION
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null){
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
   if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
@@ -921,7 +921,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
 
   const body={
     contents:[{role:'user',parts}],
-    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:65536,thinkingConfig:{thinkingBudget:0}},
+    generationConfig:{temperature:0.1,topP:0.95,maxOutputTokens:65536,thinkingConfig:{thinkingBudget}},
   };
   if(systemInstruction){
     body.system_instruction={parts:[{text:systemInstruction}]};
@@ -942,7 +942,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
     renderActiveKeyBanner();
-    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
@@ -950,7 +950,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null)
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
       renderActiveKeyBanner();
-      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx);
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -1234,8 +1234,8 @@ ${questionsForVerification}`;
 
     const keys=getKeys();
     const [pass1Text,pass2Text]=await Promise.all([
-      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length),
-      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length)
+      geminiCall([{text:verifyPrompt1}],null,0,currentKeyIndex%keys.length,2048),
+      geminiCall([{text:verifyPrompt2}],null,0,(currentKeyIndex+1)%keys.length,2048)
     ]);
 
     setProgress(70,'Resolving conflicts...');
@@ -1266,25 +1266,34 @@ ${questionsForVerification}`;
     pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
 
     if(conflicts.length>0){
-      const conflictQuestions=conflicts.map(ci=>{
+      const keysForTiebreak=getKeys();
+      const TIEBREAK_MAX_PARALLEL=Math.min(keysForTiebreak.length*2,6); // safety cap so we never fire too many requests at once
+
+      async function resolveOneConflict(ci,slotIdx){
         const q=extracted.questions[ci];
         const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
-        return `Q${ci+1} (index ${ci}): ${q.question}\n${opts}`;
-      }).join('\n\n');
+        const tiebreakPrompt=`Academic referee. Resolve this single conflicting MCQ answer. Return ONLY a valid JSON object, no markdown:
+{"qIndex":${ci},"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}
+Return ONLY the JSON object.
 
-      const tiebreakPrompt=`Academic referee. Resolve conflicting MCQ answers. Return ONLY valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"why this is correct"}]
-qIndex is the zero-based index shown in parentheses. Return ONLY the JSON array.
+QUESTION (index ${ci}):
+Q${ci+1}: ${q.question}
+${opts}`;
+        try{
+          const text=await geminiCall([{text:tiebreakPrompt}],null,0,slotIdx%keysForTiebreak.length,2048);
+          const resolved=extractJSON(text);
+          return Array.isArray(resolved)?resolved[0]:resolved;
+        }catch(e){
+          return null; // keep pass1 answer for this question if its tiebreak fails
+        }
+      }
 
-CONFLICTED QUESTIONS:
-${conflictQuestions}`;
-
-      const tiebreakText=await geminiCall([{text:tiebreakPrompt}],null);
-      try{
-        const resolved=extractJSON(tiebreakText);
-        resolved.forEach(r=>finalAnswers.set(r.qIndex,r));
-      }catch(e){
-        // Keep pass1 answers if tiebreaker fails to parse
+      // Run in batches of TIEBREAK_MAX_PARALLEL so all conflicts in a batch resolve simultaneously
+      for(let i=0;i<conflicts.length;i+=TIEBREAK_MAX_PARALLEL){
+        const batch=conflicts.slice(i,i+TIEBREAK_MAX_PARALLEL);
+        setProgress(75,`Resolving conflicts (${Math.min(i+batch.length,conflicts.length)}/${conflicts.length})...`);
+        const results=await Promise.all(batch.map((ci,bi)=>resolveOneConflict(ci,i+bi)));
+        results.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
       }
     }
 
