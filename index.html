@@ -1203,15 +1203,17 @@ async function startProcessing(){
         inline_data:{mime_type:'image/jpeg',data:b64}
       }));
 
-      const extractionPrompt=`Extract all exam questions and course info from this image.
+      const extractionPrompt=`Extract ALL exam questions and course info from ALL provided images combined.
 
 Output ONLY a raw JSON object. No text before it. No text after it. No markdown. No backticks. No explanation. Start your response with { and end with }.
 
 {"courseUniversity":"","courseFaculty":"","courseTitle":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
 
 Rules:
-- Copy every question exactly as written
-- Normalize options to labels A B C D
+- Extract EVERY SINGLE question from ALL images — do not skip any question
+- Scan every image completely from top to bottom; do not stop early
+- The question text MUST NOT include any leading number or numbering prefix (e.g. strip "26.", "50.", "Q3." etc. from the start of each question text)
+- Normalize options to labels A B C D (E if present)
 - Use "" for any course field not found
 - courseTitle defaults to "Unknown Course" if missing
 - courseYear defaults to "Unknown Year" if missing
@@ -1231,6 +1233,11 @@ Rules:
       if(!extracted.questions||!extracted.questions.length){
         throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
       }
+
+      // Strip any leading numbering the AI may have left on question text e.g. "26. ", "Q3. "
+      extracted.questions.forEach(q=>{
+        q.question=q.question.replace(/^\s*(?:Q\s*)?\d+[\.\)]\s*/i,'').trim();
+      });
 
       // Pre-fill editable fields and enable them for editing
       document.getElementById('courseUniversity').value=extracted.courseUniversity||'';
