@@ -100,38 +100,7 @@ function capturePDF(mode){
       // Intentionally do NOT call originalSave — this is what blocks the download.
     };
 
-    /* ── INTERCEPT 2: URL.createObjectURL ───────────────────────────
-       Some builds of jsPDF (and wrapper code) create a blob URL then
-       do anchor.click() rather than going through proto.save.
-       We intercept the blob creation so we have the bytes, and we
-       return a dummy URL so the rest of the code doesn't crash.
-       The anchor.click() will fire on 'blob:intercepted' which the
-       browser silently ignores — no download popup.
-       ────────────────────────────────────────────────────────────── */
-    const origCreateObjectURL = URL.createObjectURL.bind(URL);
-    let _interceptedBlob = null;
-    URL.createObjectURL = function(blobOrFile){
-      const t = blobOrFile instanceof Blob ? blobOrFile.type : '';
-      const looksLikePDF = t === 'application/pdf' || t === '' || t === 'application/octet-stream';
-      if (!settled && looksLikePDF) {
-        _interceptedBlob = blobOrFile;
-        // Resolve now if proto.save never fires (the anchor path)
-        setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            proto.save = originalSave;
-            restoreAll();
-            resolve({ blob: _interceptedBlob, filename: 'document.pdf' });
-          }
-        }, 0);
-        // Return a real (empty) blob URL so downstream code can't crash on it
-        return origCreateObjectURL(new Blob([], { type: 'application/pdf' }));
-      }
-      return origCreateObjectURL(blobOrFile);
-    };
-
     function restoreAll(){
-      URL.createObjectURL = origCreateObjectURL;
       window.toast = originalToast;
     }
 
@@ -323,10 +292,13 @@ async function pushToDrive(){
     const faculty     = (extractedData && extractedData.courseFaculty) || '';
     const semester    = (extractedData && extractedData.courseSemester) || '';
     const docTitle    = (extractedData && (extractedData.docTitle || extractedData.courseTitle)) || 'Quiz';
+    const year        = (extractedData && extractedData.courseYear) || '';
+    const courseCode  = (extractedData && extractedData.courseCode) || '';
 
     const dest = await resolveDestinationFolder(university, faculty, semester);
 
-    const fnameBase = docTitle.replace(/[^a-zA-Z0-9\s]/g,'').replace(/\s+/g,'_');
+    const fnameParts = [courseCode, year.replace(/[^0-9]/g,''), semester.toUpperCase(), faculty.toUpperCase(), docTitle, university.toUpperCase()];
+    const fnameBase = fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
 
     setBusy('📄 Generating Questions PDF…');
     await tick();
@@ -344,7 +316,8 @@ async function pushToDrive(){
     await tick();
     await uploadFileToFolder(aPdf.blob, `${fnameBase}_QA.pdf`, dest.semesterFolderId);
 
-    toast(`Pushed to Drive: ${dest.universityName} / faculty / ${dest.facultyName} / ${dest.semesterName}`, 'success');
+    const courseInfo = [docTitle, year, dest.semesterName].filter(Boolean).join(' · ');
+    toast(`Pushed to Drive: ${courseInfo} → ${dest.facultyName} → ${dest.universityName}`, 'success');
   } catch (err) {
     console.error(err);
     toast(`Drive push failed: ${err.message}`, 'error');
