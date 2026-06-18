@@ -82,9 +82,15 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
   const driveBtn = document.getElementById('pushDriveBtn');
   const jumpNav  = document.getElementById('jumpNav');
 
+  // Hard-fail loudly if DOM anchors are missing — makes debugging instant
+  if (!jumpNav && !driveBtn) {
+    console.error('[wpdm-push] Cannot inject WPDM button: jumpNav and pushDriveBtn both missing from DOM');
+    return;
+  }
+
   const btn = document.createElement('button');
   btn.id        = 'wpdmPushBtn';
-  btn.className = 'jump-btn';
+  btn.className = 'jump-btn';  // defined in index.html stylesheet
   btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
 
   btn.onclick = async () => {
@@ -130,19 +136,16 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
       toast(`WPDM packages created!\n• ${qPkg.title || qResult.name}\n• ${aPkg.title || aResult.name}`, 'success');
 
     } catch (err) {
-      console.error(err);
+      console.error('[wpdm-push] Package creation failed:', err);
       btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
       btn.disabled  = false;
       toast(`WPDM push failed: ${err.message}`, 'error');
     }
   };
 
-  // Append inside jumpNav (same container as pushDriveBtn)
-  if (jumpNav) {
-    jumpNav.appendChild(btn);
-  } else if (driveBtn && driveBtn.parentNode) {
-    driveBtn.parentNode.appendChild(btn);
-  } else {
-    document.body.appendChild(btn);
-  }
+  // Append into jumpNav (same nav bar as Push to Drive button).
+  // Falls back to driveBtn.parentNode if jumpNav somehow isn't found.
+  const container = jumpNav || driveBtn.parentNode;
+  container.appendChild(btn);
+  console.log('[wpdm-push] Button injected into', container.id || container.className);
 }
