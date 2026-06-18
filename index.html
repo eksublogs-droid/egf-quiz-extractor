@@ -1972,7 +1972,8 @@ async function downloadPDF(mode){
   // ── FOOTER ON LAST PAGE ──
   drawFooter();
 
-  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s]/g,'').replace(/\s+/g,'_');
+  const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),title,university.toUpperCase()];
+  const fnameBase=fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
   const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
   doc.save(fname);
   toast(`PDF downloaded: ${fname}`,'success');
