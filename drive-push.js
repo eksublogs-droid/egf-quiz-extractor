@@ -91,38 +91,62 @@ function capturePDF(mode){
        2. Patch iframe contentDocument.write to be a no-op (preventing
           the auto-download link from being written and clicked).
        ────────────────────────────────────────────────────────────── */
-    const jsPDFProto = window.jspdf.jsPDF.prototype;
-    const originalOutput = jsPDFProto.output;
-
-    jsPDFProto.output = function(type, options){
-      const result = originalOutput.apply(this, arguments);
-      if (!settled) {
-        if (type === 'blob' || type === 'arraybuffer') {
-          // Already a blob or buffer
-          const blob = (type === 'blob') ? result : new Blob([result], { type: 'application/pdf' });
-          settled = true;
-          jsPDFProto.output = originalOutput;
-          restoreAll();
-          clearTimeout(timeoutId);
-          resolve({ blob, filename: capturedFilename });
-        } else if (type === 'datauristring' || type === 'datauri' || type === 'dataurl') {
-          // Convert data URI string to blob
-          try {
-            const base64 = String(result).split(',')[1];
-            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-            const blob = new Blob([bytes], { type: 'application/pdf' });
+    // ── Build the patched output function once, used for both prototype AND instance-level patching ──
+    function makePatchedOutput(originalFn){
+      return function(type, options){
+        const result = originalFn.apply(this, arguments);
+        if (!settled) {
+          if (type === 'blob' || type === 'arraybuffer') {
+            const blob = (type === 'blob') ? result : new Blob([result], { type: 'application/pdf' });
             settled = true;
-            jsPDFProto.output = originalOutput;
             restoreAll();
             clearTimeout(timeoutId);
+            console.log('[drive-push] captured PDF via output(' + type + ')');
             resolve({ blob, filename: capturedFilename });
-          } catch(e) {
-            // Conversion failed; fall through
+          } else if (type === 'datauristring' || type === 'datauri' || type === 'dataurl') {
+            try {
+              const base64 = String(result).split(',')[1];
+              const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+              const blob = new Blob([bytes], { type: 'application/pdf' });
+              settled = true;
+              restoreAll();
+              clearTimeout(timeoutId);
+              console.log('[drive-push] captured PDF via output(' + type + ')');
+              resolve({ blob, filename: capturedFilename });
+            } catch(e) {
+              console.log('[drive-push] output(' + type + ') capture failed to convert:', e.message);
+            }
           }
         }
+        return result;
+      };
+    }
+
+    const jsPDFProto = window.jspdf.jsPDF.prototype;
+    const originalProtoOutput = jsPDFProto.output;
+    jsPDFProto.output = makePatchedOutput(originalProtoOutput);
+
+    // ── ALSO patch jsPDF constructor so any instance created with its OWN
+    //    instance-level `output` (some jsPDF builds assign `this.output = ...`
+    //    inside the constructor, which shadows the prototype and would make
+    //    the prototype patch above silently never fire) gets intercepted too. ──
+    const OriginalJsPDF = window.jspdf.jsPDF;
+    function PatchedJsPDF(...args){
+      const instance = new OriginalJsPDF(...args);
+      if (Object.prototype.hasOwnProperty.call(instance, 'output')) {
+        const originalInstanceOutput = instance.output.bind(instance);
+        instance.output = makePatchedOutput(originalInstanceOutput);
       }
-      return result;
-    };
+      return instance;
+    }
+    PatchedJsPDF.prototype = OriginalJsPDF.prototype;
+    Object.setPrototypeOf(PatchedJsPDF, OriginalJsPDF);
+    window.jspdf.jsPDF = PatchedJsPDF;
+
+    function restoreOutputPatches(){
+      jsPDFProto.output = originalProtoOutput;
+      window.jspdf.jsPDF = OriginalJsPDF;
+    }
 
     /* ── INTERCEPT: block iframe write that triggers auto-download ──────
        The hidden iframe has its contentDocument.write() called with an
@@ -179,7 +203,7 @@ function capturePDF(mode){
 
     function restoreAll(){
       window.toast = originalToast;
-      jsPDFProto.output = originalOutput;
+      restoreOutputPatches();
       URL.createObjectURL = originalCreateObjectURL;
       document.body.appendChild = originalAppendChild;
     }
