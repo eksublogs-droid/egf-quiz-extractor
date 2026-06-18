@@ -149,3 +149,8 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
   container.appendChild(btn);
   console.log('[wpdm-push] Button injected into', container.id || container.className);
 }
+/* ════════════════════════════════════════════════════════
+   EduGlobalForge — WPDM Push Module (wpdm-push.js)
+   Standalone add-on. Does NOT modify any existing files.
+   Injected by drive-push.js after a successful Drive push.
+   ════════════════════════════════════════════════════════ */
