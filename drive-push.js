@@ -424,15 +424,20 @@ async function pushToDrive(){
 
     setBusy('☁️ Uploading Questions PDF…');
     await tick();
-    await uploadFileToFolder(qPdf.blob, `${fnameBase}_Questions.pdf`, dest.semesterFolderId);
+    const qResult = await uploadFileToFolder(qPdf.blob, `${fnameBase}_Questions.pdf`, dest.semesterFolderId);
 
     setBusy('☁️ Uploading Q+A PDF…');
     await tick();
-    await uploadFileToFolder(aPdf.blob, `${fnameBase}_QA.pdf`, dest.semesterFolderId);
+    const aResult = await uploadFileToFolder(aPdf.blob, `${fnameBase}_QA.pdf`, dest.semesterFolderId);
 
     const courseInfo = [docTitle, year, dest.semesterName].filter(Boolean).join(' · ');
     const deptInfo = dest.departmentName ? ` → ${dest.departmentName}` : '';
     toast(`Pushed to Drive: ${courseInfo} → ${dest.facultyName}${deptInfo} → ${dest.universityName}`, 'success');
+
+    // Inject WPDM button now that we have both Drive file results
+    if (typeof initWpdmButton === 'function') {
+      initWpdmButton(qResult, aResult, qPdf.blob, aPdf.blob);
+    }
   } catch (err) {
     console.error(err);
     toast(`Drive push failed: ${err.message}`, 'error');
