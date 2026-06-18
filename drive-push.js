@@ -143,55 +143,7 @@ function capturePDF(mode){
   });
 }
 
-/* ── PDF CACHE + SINGLE-BUILD MUTEX ──
-   _pdfCache holds the last successfully pre-generated pair.
-   _buildPromise is the in-flight Promise (if one exists), shared so
-   that pushToDrive can await it instead of starting a second build.
-   This makes "only one PDF build at a time" a hard guarantee. */
-let _pdfCache = { key: null, questions: null, answers: null };
-let _buildPromise = null; // non-null while a build is in flight
 
-function _currentDataKey(){
-  // Cheap deterministic fingerprint of the current verified data + course fields.
-  try {
-    const len   = (typeof verifiedData !== 'undefined' && verifiedData) ? verifiedData.length : 0;
-    const title = (typeof extractedData !== 'undefined' && extractedData) ? extractedData.docTitle : '';
-    const firstQ = (typeof verifiedData !== 'undefined' && verifiedData && verifiedData[0]) ? verifiedData[0].question : '';
-    return `${len}::${title}::${firstQ}`;
-  } catch (e) {
-    return null;
-  }
-}
-
-// Builds both PDFs in the background (no UI changes, no button state).
-// Safe to call multiple times — if a build is already running or the
-// cache is already current, it does nothing new.
-async function pregeneratePDFs(){
-  const key = _currentDataKey();
-  if (!key) return;
-  if (_pdfCache.key === key && _pdfCache.questions && _pdfCache.answers) return; // already cached
-
-  // If a build is already in flight (for the same key), don't launch another one.
-  if (_buildPromise) return;
-
-  _buildPromise = (async () => {
-    try {
-      const qPdf = await capturePDF('questions');
-      const aPdf = await capturePDF('answers');
-      _pdfCache = { key, questions: qPdf, answers: aPdf };
-    } catch (err) {
-      // Silent on purpose — background pre-build failure is non-blocking.
-      // pushToDrive() will simply build fresh PDFs itself when tapped.
-      console.warn('Background PDF pre-generation failed (will build on demand):', err.message);
-      _pdfCache = { key: null, questions: null, answers: null };
-    } finally {
-      _buildPromise = null;
-    }
-  })();
-
-  // Don't await here — this function returns immediately so the caller
-  // (the main page) is not blocked.
-}
 
 
 async function driveFetch(url, options = {}){
@@ -331,46 +283,11 @@ async function pushToDrive(){
 
     const fnameBase = docTitle.replace(/[^a-zA-Z0-9\s]/g,'').replace(/\s+/g,'_');
 
-    const key = _currentDataKey();
-    const haveValidCache = _pdfCache.key === key && _pdfCache.questions && _pdfCache.answers;
+    setBusy('Generating Questions PDF…');
+    const qPdf = await capturePDF('questions');
 
-    let qPdf, aPdf;
-
-    if (haveValidCache) {
-      // Pre-generated PDFs are ready — use them instantly, no rebuild.
-      setBusy('Using pre-generated PDFs…');
-      qPdf = _pdfCache.questions;
-      aPdf = _pdfCache.answers;
-
-    } else if (_buildPromise) {
-      // A background pre-build is already in flight.
-      // Wait for it to finish and reuse the result instead of launching
-      // a second competing build — this is the fix for the race/timeout.
-      setBusy('Waiting for PDF build to finish…');
-      await _buildPromise;
-
-      if (_pdfCache.key === key && _pdfCache.questions && _pdfCache.answers) {
-        // Background build succeeded — use its result.
-        qPdf = _pdfCache.questions;
-        aPdf = _pdfCache.answers;
-      } else {
-        // Background build failed — do a fresh build now (single build,
-        // sequential, no race).
-        setBusy('Generating Questions PDF…');
-        qPdf = await capturePDF('questions');
-
-        setBusy('Generating Q+A PDF…');
-        aPdf = await capturePDF('answers');
-      }
-
-    } else {
-      // No cache, no in-flight build — build fresh now (sequential, no race).
-      setBusy('Generating Questions PDF…');
-      qPdf = await capturePDF('questions');
-
-      setBusy('Generating Q+A PDF…');
-      aPdf = await capturePDF('answers');
-    }
+    setBusy('Generating Q+A PDF…');
+    const aPdf = await capturePDF('answers');
 
     setBusy('Uploading Questions PDF…');
     await uploadFileToFolder(qPdf.blob, `${fnameBase}_Questions.pdf`, dest.semesterFolderId);
