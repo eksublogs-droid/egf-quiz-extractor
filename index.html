@@ -550,6 +550,10 @@
           <label>Faculty</label>
           <input type="text" id="courseFaculty" placeholder="Will be filled by AI..." disabled/>
         </div>
+        <div class="field-group">
+          <label>Department</label>
+          <input type="text" id="courseDepartment" placeholder="Will be filled by AI..." disabled/>
+        </div>
       </div>
       <div class="field-row">
         <div class="field-group">
@@ -726,7 +730,7 @@
 //  STATE
 // ════════════════════════════════════════════════════════
 let uploadedFiles   = [];   // File objects
-let extractedData   = null; // { questions, courseUniversity, courseFaculty, courseTitle, courseSemester, courseYear, docTitle }
+let extractedData   = null; // { questions, courseUniversity, courseFaculty, courseDepartment, courseTitle, courseSemester, courseYear, docTitle }
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
@@ -1181,7 +1185,7 @@ function resetAll(){
   document.getElementById('progressWrap').style.display='none';
   setProgress(0,'');
   document.getElementById('outputArea').style.display='none';
-  ['courseUniversity','courseFaculty','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
+  ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
     const el=document.getElementById(id);
     el.value='';
     el.disabled=true;
@@ -1248,7 +1252,7 @@ async function startProcessing(){
   } else if(processingStage===0){
     // Full fresh run: hide old output and reset course fields
     document.getElementById('outputArea').style.display='none';
-    ['courseUniversity','courseFaculty','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
+    ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
       const el=document.getElementById(id);
       el.value='';
       el.disabled=true;
@@ -1275,7 +1279,7 @@ async function startProcessing(){
 
 Output ONLY a raw JSON object. No text before it. No text after it. No markdown. No backticks. No explanation. Start your response with { and end with }.
 
-{"courseUniversity":"","courseFaculty":"","courseTitle":"","courseCode":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
+{"courseUniversity":"","courseFaculty":"","courseDepartment":"","courseTitle":"","courseCode":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
 
 Rules:
 - Extract EVERY SINGLE question from ALL images — do not skip any question
@@ -1313,17 +1317,19 @@ Rules:
       // Pre-fill editable fields and enable them for editing
       document.getElementById('courseUniversity').value=extracted.courseUniversity||'';
       document.getElementById('courseFaculty').value=extracted.courseFaculty||'';
+      document.getElementById('courseDepartment').value=extracted.courseDepartment||'';
       document.getElementById('courseTitle').value=extracted.courseTitle||'';
       document.getElementById('courseCode').value=extracted.courseCode||'';
       document.getElementById('courseSemester').value=extracted.courseSemester||'';
       document.getElementById('courseYear').value=extracted.courseYear||'';
-      ['courseUniversity','courseFaculty','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
+      ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
 
       // Save extraction result so we can resume from here if verification fails
       extractedData={
         questions:extracted.questions,
         courseUniversity:extracted.courseUniversity||'',
         courseFaculty:extracted.courseFaculty||'',
+        courseDepartment:extracted.courseDepartment||'',
         courseTitle:extracted.courseTitle||'',
         courseCode:extracted.courseCode||'',
         courseSemester:extracted.courseSemester||'',
@@ -1439,12 +1445,13 @@ ${conflictQuestionsText}`;
       // Read course fields (user may have edited them after extraction)
       const finalUniversity=document.getElementById('courseUniversity').value||extractedData.courseUniversity||'';
       const finalFaculty=document.getElementById('courseFaculty').value||extractedData.courseFaculty||'';
+      const finalDepartment=document.getElementById('courseDepartment').value||extractedData.courseDepartment||'';
       const finalTitle=document.getElementById('courseTitle').value||extractedData.courseTitle||'Unknown Course';
       const finalCode=document.getElementById('courseCode').value||extractedData.courseCode||'';
       const finalSemester=document.getElementById('courseSemester').value||extractedData.courseSemester||'';
       const finalYear=document.getElementById('courseYear').value||extractedData.courseYear||'';
 
-      const docTitleParts=[finalUniversity,finalFaculty,finalCode,finalTitle,finalSemester,finalYear].filter(Boolean);
+      const docTitleParts=[finalUniversity,finalFaculty,finalDepartment,finalCode,finalTitle,finalSemester,finalYear].filter(Boolean);
       const docTitle=docTitleParts.join(' · ');
 
       verifiedData=extractedData.questions.map((q,i)=>{
@@ -1460,6 +1467,7 @@ ${conflictQuestionsText}`;
 
       extractedData.courseUniversity=finalUniversity;
       extractedData.courseFaculty=finalFaculty;
+      extractedData.courseDepartment=finalDepartment;
       extractedData.courseTitle=finalTitle;
       extractedData.courseCode=finalCode;
       extractedData.courseSemester=finalSemester;
@@ -1697,6 +1705,7 @@ async function downloadPDF(mode){
 
   const university=extractedData?.courseUniversity||'';
   const faculty=extractedData?.courseFaculty||'';
+  const department=extractedData?.courseDepartment||'';
   const title=extractedData?.courseTitle||'Quiz';
   const courseCode=extractedData?.courseCode||'';
   const semester=extractedData?.courseSemester||'';
@@ -1767,10 +1776,10 @@ async function downloadPDF(mode){
     doc.setFont('helvetica','bold');
     doc.setFontSize(6.5);
     doc.setTextColor(...whiteDim);
-    let cinfo=[university,faculty,courseCode,title].filter(Boolean).join(' · ');
+    let cinfo=[university,faculty,department,courseCode,title].filter(Boolean).join(' · ');
     const maxCW=pageW-margin*2-70;
     while(doc.getStringUnitWidth(cinfo)*6.5/doc.internal.scaleFactor>maxCW && cinfo.length>8) cinfo=cinfo.slice(0,-1);
-    if(cinfo!==([university,faculty,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
+    if(cinfo!==([university,faculty,department,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
     doc.text(cinfo,pageW/2,12.5,{align:'center'});
     // Page number
     doc.setFont('helvetica','normal');
@@ -1797,6 +1806,7 @@ async function downloadPDF(mode){
   const coverRows=[];
   if(university) coverRows.push({text:university, fs:11, fw:'bold', color:white});
   if(faculty)    coverRows.push({text:faculty,    fs:8.5,fw:'normal',color:whiteDim});
+  if(department) coverRows.push({text:department, fs:8.5,fw:'normal',color:whiteDim});
   const cline=[courseCode,title,semester,year].filter(Boolean).join(' · ');
   if(cline)      coverRows.push({text:cline,      fs:8.5,fw:'bold', color:[100,170,255]});
 
@@ -1972,7 +1982,7 @@ async function downloadPDF(mode){
   // ── FOOTER ON LAST PAGE ──
   drawFooter();
 
-  const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),title,university.toUpperCase()];
+  const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),department.toUpperCase(),title,university.toUpperCase()];
   const fnameBase=fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
   const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
   // Download via data URI injected into a hidden iframe to avoid:
