@@ -349,18 +349,37 @@ function resolveSemesterFolderName(semesterRaw){
   return 'First Semester';
 }
 
-/* ── FULL PATH RESOLUTION: root → university → faculty → faculty-name → semester ── */
-async function resolveDestinationFolder(universityRaw, facultyRaw, semesterRaw){
+function resolveDepartmentFolderName(departmentRaw){
+  const d = (departmentRaw || '').trim();
+  if (!d) return '';
+  // Convert to title case so it matches existing Drive folders
+  // e.g. "DEPARTMENT OF PHYSICS" or "department of physics" → "Department of Physics"
+  return d.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/* ── FULL PATH RESOLUTION: root → university → faculty → faculty-name → department → department-name → semester ── */
+async function resolveDestinationFolder(universityRaw, facultyRaw, departmentRaw, semesterRaw){
   const universityName = resolveUniversityFolderName(universityRaw);
   const facultyName     = resolveFacultyFolderName(facultyRaw);
+  const departmentName  = resolveDepartmentFolderName(departmentRaw);
   const semesterName    = resolveSemesterFolderName(semesterRaw);
 
   const universityFolderId = await findOrCreateFolder(universityName, DRIVE_ROOT_FOLDER_ID);
   const facultyRootId       = await findOrCreateFolder('Faculty', universityFolderId);
   const facultyFolderId     = await findOrCreateFolder(facultyName, facultyRootId);
-  const semesterFolderId    = await findOrCreateFolder(semesterName, facultyFolderId);
 
-  return { universityFolderId, facultyFolderId, semesterFolderId, universityName, facultyName, semesterName };
+  let semesterParentId;
+  if (departmentName) {
+    const departmentRootId  = await findOrCreateFolder('Department', facultyFolderId);
+    const departmentFolderId = await findOrCreateFolder(departmentName, departmentRootId);
+    semesterParentId = departmentFolderId;
+  } else {
+    semesterParentId = facultyFolderId;
+  }
+
+  const semesterFolderId = await findOrCreateFolder(semesterName, semesterParentId);
+
+  return { universityFolderId, facultyFolderId, semesterFolderId, universityName, facultyName, departmentName, semesterName };
 }
 
 /* ── MAIN ENTRY POINT: "Push to Drive" ──
@@ -384,14 +403,15 @@ async function pushToDrive(){
     await tick();
     const university = (extractedData && extractedData.courseUniversity) || '';
     const faculty     = (extractedData && extractedData.courseFaculty) || '';
+    const department  = (extractedData && extractedData.courseDepartment) || '';
     const semester    = (extractedData && extractedData.courseSemester) || '';
     const docTitle    = (extractedData && (extractedData.docTitle || extractedData.courseTitle)) || 'Quiz';
     const year        = (extractedData && extractedData.courseYear) || '';
     const courseCode  = (extractedData && extractedData.courseCode) || '';
 
-    const dest = await resolveDestinationFolder(university, faculty, semester);
+    const dest = await resolveDestinationFolder(university, faculty, department, semester);
 
-    const fnameParts = [courseCode, year.replace(/[^0-9]/g,''), dest.semesterName.toUpperCase(), dest.facultyName.toUpperCase(), docTitle, dest.universityName.toUpperCase()];
+    const fnameParts = [courseCode, year.replace(/[^0-9]/g,''), dest.semesterName.toUpperCase(), dest.facultyName.toUpperCase(), dest.departmentName.toUpperCase(), docTitle, dest.universityName.toUpperCase()];
     const fnameBase = fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
 
     setBusy('📄 Generating Questions PDF…');
@@ -411,7 +431,8 @@ async function pushToDrive(){
     await uploadFileToFolder(aPdf.blob, `${fnameBase}_QA.pdf`, dest.semesterFolderId);
 
     const courseInfo = [docTitle, year, dest.semesterName].filter(Boolean).join(' · ');
-    toast(`Pushed to Drive: ${courseInfo} → ${dest.facultyName} → ${dest.universityName}`, 'success');
+    const deptInfo = dest.departmentName ? ` → ${dest.departmentName}` : '';
+    toast(`Pushed to Drive: ${courseInfo} → ${dest.facultyName}${deptInfo} → ${dest.universityName}`, 'success');
   } catch (err) {
     console.error(err);
     toast(`Drive push failed: ${err.message}`, 'error');
