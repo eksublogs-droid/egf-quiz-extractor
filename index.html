@@ -923,10 +923,34 @@ function closeSettings(){ document.getElementById('settingsModal').classList.rem
 // ════════════════════════════════════════════════════════
 //  GEMINI API CALL WITH AUTO KEY ROTATION
 // ════════════════════════════════════════════════════════
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0, model=GEMINI_MODEL){
+// ════════════════════════════════════════════════════════
+//  RATE-LIMIT AUTO-RETRY (waits out a 429 instead of failing)
+// ════════════════════════════════════════════════════════
+const MAX_RATE_LIMIT_ROUNDS=3; // how many full wait-and-retry cycles to attempt
+const RATE_LIMIT_FALLBACK_WAIT_SECONDS=20; // used if Gemini's error message has no "retry in Ns" hint
+
+function waitWithCountdown(totalSeconds,round){
+  return new Promise(resolve=>{
+    let remaining=totalSeconds;
+    const label=document.getElementById('progressLabel');
+    const tick=()=>{
+      if(label) label.textContent=`Rate limited — retrying in ${remaining}s (attempt ${round}/${MAX_RATE_LIMIT_ROUNDS})...`;
+      if(remaining<=0){
+        clearInterval(intervalId);
+        resolve();
+        return;
+      }
+      remaining--;
+    };
+    tick();
+    const intervalId=setInterval(tick,1000);
+  });
+}
+
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0, model=GEMINI_MODEL, maxTokens=65536, timeoutMs=45000){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
-  if(attempt>=keys.length*2) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
+  if(attempt>=keys.length*2*(MAX_RATE_LIMIT_ROUNDS+1)) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
 
   if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
   const keyIdx=(startKeyIdx+attempt)%keys.length;
@@ -936,7 +960,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
   const body={
     contents:[{role:'user',parts}],
     generationConfig:Object.assign(
-      {temperature:0.1,topP:0.95,maxOutputTokens:65536},
+      {temperature:0.1,topP:0.95,maxOutputTokens:maxTokens},
       is25Flash?{thinkingConfig:{thinkingBudget}}:{}
     ),
   };
@@ -944,16 +968,40 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
     body.system_instruction={parts:[{text:systemInstruction}]};
   }
 
+  // Hard timeout so a runaway/degenerate stream can't hang forever
+  const abortController=new AbortController();
+  const timeoutId=setTimeout(()=>abortController.abort(),timeoutMs);
+
   let res;
   try{
     res=await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
-      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:abortController.signal}
     );
-  }catch(e){ throw new Error('Network error: '+e.message) }
+  }catch(e){
+    clearTimeout(timeoutId);
+    if(e.name==='AbortError') throw new Error('Request timed out — Gemini took too long to respond. Try again.');
+    throw new Error('Network error: '+e.message);
+  }
+
+  clearTimeout(timeoutId);
 
   if(res.status===429||res.status===503){
     if(attempt>=keys.length*2-1){
+      // All keys exhausted this round. For 429 specifically, this usually means
+      // every project's per-minute quota is briefly full — wait it out and
+      // retry automatically instead of failing outright.
+      if(res.status===429 && attempt<keys.length*2-1+(MAX_RATE_LIMIT_ROUNDS*keys.length*2)){
+        const err=await res.json().catch(()=>({}));
+        const msg=err?.error?.message||res.statusText;
+        const waitMatch=msg.match(/retry in (\d+(?:\.\d+)?)/i);
+        const waitSeconds=waitMatch?Math.ceil(parseFloat(waitMatch[1])):RATE_LIMIT_FALLBACK_WAIT_SECONDS;
+        const round=Math.floor(attempt/(keys.length*2))+1;
+        if(round<=MAX_RATE_LIMIT_ROUNDS){
+          await waitWithCountdown(waitSeconds,round);
+          return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model,maxTokens,timeoutMs);
+        }
+      }
       const err=await res.json().catch(()=>({}));
       throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
     }
@@ -981,6 +1029,8 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
   let fullText='';
   let buffer='';
   let finishReason='';
+  const MAX_CHARS=maxTokens*5; // rough safety ceiling (≈5 chars/token) to catch degenerate streams even if abort signal is delayed
+  let forcedStop=false;
 
   while(true){
     const {done,value}=await reader.read();
@@ -1004,11 +1054,18 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
           if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
           // Yield to browser so UI actually paints on Android
           await new Promise(r=>setTimeout(r,0));
+          if(fullText.length>MAX_CHARS){
+            forcedStop=true;
+            try{ reader.cancel(); }catch(_){}
+            break;
+          }
         }
       }catch(_){}
     }
+    if(forcedStop) break;
   }
 
+  if(forcedStop) throw new Error('Response exceeded safe length — Gemini may have entered a repetitive loop. Try again.');
   if(!fullText) throw new Error('Empty response from Gemini. Try again.');
   if(finishReason==='MAX_TOKENS') throw new Error('Response was cut off (too many questions/images in one batch). Try uploading fewer images per batch.');
   return fullText;
