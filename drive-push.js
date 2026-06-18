@@ -78,37 +78,51 @@ function capturePDF(mode){
       if (originalToast) originalToast.apply(this, arguments);
     };
 
-    const proto = window.jspdf.jsPDF.prototype;
-    const originalSave = proto.save;
     let settled = false;
+    let capturedFilename = 'document.pdf';
 
-    /* ── INTERCEPT 1: jsPDF proto.save ──────────────────────────────
-       Grabs bytes via output('blob') and resolves WITHOUT calling
-       the real save(), so no browser download fires.
+    /* ── INTERCEPT: URL.createObjectURL ─────────────────────────────
+       downloadPDF now uses doc.output('blob') + URL.createObjectURL +
+       hidden <a> click instead of doc.save(). We intercept at the
+       createObjectURL call: grab the blob, return a dummy URL so the
+       anchor click is harmless, then resolve.
        ────────────────────────────────────────────────────────────── */
-    proto.save = function(filename){
-      if (settled) { proto.save = originalSave; return; }
-      settled = true;
-      proto.save = originalSave;
-      restoreAll();
-      try {
-        const blob = this.output('blob');
-        resolve({ blob, filename: filename || 'document.pdf' });
-      } catch (err) {
-        reject(err);
+    const originalCreateObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = function(blob){
+      if (!settled && blob instanceof Blob && blob.type === 'application/pdf') {
+        settled = true;
+        URL.createObjectURL = originalCreateObjectURL;
+        restoreAll();
+        clearTimeout(timeoutId);
+        resolve({ blob, filename: capturedFilename });
+        return 'about:blank'; // dummy — the <a> appends with this but we block it below
       }
-      // Intentionally do NOT call originalSave — this is what blocks the download.
+      return originalCreateObjectURL(blob);
+    };
+
+    /* ── INTERCEPT: document.body.appendChild ───────────────────────
+       Block the hidden <a> that downloadPDF appends so no click fires.
+       Also capture the filename from el.download before we block it.
+       ────────────────────────────────────────────────────────────── */
+    const originalAppendChild = document.body.appendChild.bind(document.body);
+    document.body.appendChild = function(el){
+      if (el && el.tagName === 'A' && el.download && el.download.endsWith('.pdf')) {
+        capturedFilename = el.download;
+        return el; // don't actually append or click
+      }
+      return originalAppendChild(el);
     };
 
     function restoreAll(){
       window.toast = originalToast;
+      URL.createObjectURL = originalCreateObjectURL;
+      document.body.appendChild = originalAppendChild;
     }
 
     // Safety timeout — restore everything and reject if PDF never finishes.
     const timeoutId = setTimeout(() => {
       if (!settled) {
         settled = true;
-        proto.save = originalSave;
         restoreAll();
         reject(new Error('PDF generation did not complete within 120s (timeout)'));
       }
@@ -121,7 +135,6 @@ function capturePDF(mode){
     } catch (err) {
       if (!settled) {
         settled = true;
-        proto.save = originalSave;
         restoreAll();
         clearTimeout(timeoutId);
         reject(err);
@@ -135,7 +148,6 @@ function capturePDF(mode){
         (err) => {
           if (!settled) {
             settled = true;
-            proto.save = originalSave;
             restoreAll();
             clearTimeout(timeoutId);
             reject(err);
@@ -285,24 +297,6 @@ async function pushToDrive(){
   // Give the browser a tick to repaint the button label before heavy work starts
   const tick = () => new Promise(r => setTimeout(r, 60));
 
-  // ── STRAY-DOWNLOAD GUARD ──
-  // Belt-and-suspenders on top of the proto.save interception below: for the
-  // entire duration of the push (generation + upload), block any anchor click
-  // that has a download attribute and block window.open. This guarantees the
-  // browser's native "Save to Downloads" sheet can never appear during a
-  // Drive push, no matter what triggers it.
-  const _origAnchorClick = HTMLAnchorElement.prototype.click;
-  const _origWindowOpen = window.open;
-  HTMLAnchorElement.prototype.click = function(){
-    if (this.hasAttribute('download')) return;
-    return _origAnchorClick.apply(this, arguments);
-  };
-  window.open = function(){ return null; };
-  const restoreDownloadGuard = () => {
-    HTMLAnchorElement.prototype.click = _origAnchorClick;
-    window.open = _origWindowOpen;
-  };
-
   try {
     setBusy('🔍 Resolving folders…');
     await tick();
@@ -315,7 +309,7 @@ async function pushToDrive(){
 
     const dest = await resolveDestinationFolder(university, faculty, semester);
 
-    const fnameParts = [courseCode, year.replace(/[^0-9]/g,''), semester.toUpperCase(), faculty.toUpperCase(), docTitle, university.toUpperCase()];
+    const fnameParts = [courseCode, year.replace(/[^0-9]/g,''), dest.semesterName.toUpperCase(), dest.facultyName.toUpperCase(), docTitle, dest.universityName.toUpperCase()];
     const fnameBase = fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
 
     setBusy('📄 Generating Questions PDF…');
@@ -341,6 +335,5 @@ async function pushToDrive(){
     toast(`Drive push failed: ${err.message}`, 'error');
   } finally {
     clearBusy();
-    restoreDownloadGuard();
   }
 }
