@@ -2068,7 +2068,95 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
 updateKeyStatus();
 renderActiveKeyBanner();
 </script>
-<script src="wpdm-push.js"></script>
+<script>
+/* ── WPDM Push (inlined) ── */
+const WPDM_SITE       = 'https://eduglobalforge.com/pastquestions';
+const WPDM_API_KEY    = '6a343066741d8';
+const WPDM_CAT_ID     = 419;
+const DRIVE_API_FILES = 'https://www.googleapis.com/drive/v3/files';
+
+async function makePublic(fileId) {
+  const token = await getDriveToken();
+  const res = await fetch(`${DRIVE_API_FILES}/${fileId}/permissions`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'reader', type: 'anyone' })
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Failed to set public permission (${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
+function driveDownloadUrl(fileId) {
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+async function createWpdmPackage({ title, linkLabel, fileUrl, fileName, fileSize, basePrice }) {
+  const body = {
+    title, status: 'publish', categories: [WPDM_CAT_ID],
+    link_label: linkLabel, download_count: 78, view_count: 102,
+    package_size: formatSize(fileSize), base_price: basePrice,
+    files: { "1": fileUrl }, fileinfo: { "1": { title: fileName, url: fileUrl } }
+  };
+  const res = await fetch(`${WPDM_SITE}/wp-json/wpdm/v1/packages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${WPDM_API_KEY}` },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`WPDM package creation failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
+  const existing = document.getElementById('wpdmPushBtn');
+  if (existing) existing.remove();
+  const driveBtn = document.getElementById('pushDriveBtn');
+  const jumpNav  = document.getElementById('jumpNav');
+  if (!jumpNav && !driveBtn) {
+    console.error('[wpdm] DOM anchors missing');
+    return;
+  }
+  const btn = document.createElement('button');
+  btn.id        = 'wpdmPushBtn';
+  btn.className = 'jump-btn';
+  btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
+  btn.onclick = async () => {
+    btn.disabled = true;
+    btn.innerHTML = '🔓 Setting permissions…';
+    try {
+      await Promise.all([makePublic(qResult.id), makePublic(aResult.id)]);
+      const qUrl = driveDownloadUrl(qResult.id);
+      const aUrl = driveDownloadUrl(aResult.id);
+      btn.innerHTML = '📦 Creating packages…';
+      const [qPkg, aPkg] = await Promise.all([
+        createWpdmPackage({ title: qResult.name, linkLabel: 'Download Past Questions (No Answers)', fileUrl: qUrl, fileName: qResult.name, fileSize: qBlob.size, basePrice: 0 }),
+        createWpdmPackage({ title: aResult.name, linkLabel: 'Download Past Questions with Answers', fileUrl: aUrl, fileName: aResult.name, fileSize: aBlob.size, basePrice: 200 })
+      ]);
+      btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
+      btn.disabled = false;
+      toast(`WPDM packages created!\n• ${qPkg.title || qResult.name}\n• ${aPkg.title || aResult.name}`, 'success');
+    } catch (err) {
+      console.error('[wpdm] failed:', err);
+      btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
+      btn.disabled = false;
+      toast(`WPDM push failed: ${err.message}`, 'error');
+    }
+  };
+  const container = jumpNav || driveBtn.parentNode;
+  container.appendChild(btn);
+  console.log('[wpdm] Button injected into', container.id);
+}
+</script>
 <script src="drive-push.js"></script>
 </body>
 </html>
