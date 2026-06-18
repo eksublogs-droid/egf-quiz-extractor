@@ -1975,18 +1975,41 @@ async function downloadPDF(mode){
   const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),title,university.toUpperCase()];
   const fnameBase=fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
   const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
-  // Use Blob URL + hidden <a> to avoid browser native download dialog (DuckBrowser etc.)
-  const pdfBlob=doc.output('blob');
-  const pdfUrl=URL.createObjectURL(pdfBlob);
-  const dlLink=document.createElement('a');
-  dlLink.href=pdfUrl;
-  dlLink.download=fname;
-  dlLink.style.display='none';
-  document.body.appendChild(dlLink);
-  dlLink.click();
-  document.body.removeChild(dlLink);
-  setTimeout(()=>URL.revokeObjectURL(pdfUrl),10000);
-  toast(`PDF downloaded: ${fname}`,'success');
+  // Download via data URI injected into a hidden iframe to avoid:
+  // (a) DuckDuckGo browser's native "Save to Downloads" dialog (triggered by blob URL anchor clicks)
+  // (b) Blank-page navigation on Android WebView when anchor.click() fires on a detached element
+  const pdfDataUri=doc.output('datauristring');
+  try{
+    // Try the hidden-iframe approach first — works on Chrome, Firefox, most mobile browsers
+    const iframeId='__egf_pdf_dl_frame__';
+    let dlFrame=document.getElementById(iframeId);
+    if(!dlFrame){
+      dlFrame=document.createElement('iframe');
+      dlFrame.id=iframeId;
+      dlFrame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;border:none;';
+      document.body.appendChild(dlFrame);
+    }
+    // Write a tiny auto-download page into the iframe
+    const iframeDoc=dlFrame.contentDocument||dlFrame.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(`<!DOCTYPE html><html><body><a id="dl" href="${pdfDataUri}" download="${fname.replace(/"/g,'&quot;')}"></a><script>document.getElementById('dl').click();<\/script></body></html>`);
+    iframeDoc.close();
+    toast(`PDF downloaded: ${fname}`,'success');
+  }catch(iframeErr){
+    // Fallback: data URI anchor click (works when iframe write is blocked by CSP)
+    try{
+      const dlLink=document.createElement('a');
+      dlLink.href=pdfDataUri;
+      dlLink.download=fname;
+      dlLink.style.display='none';
+      document.body.appendChild(dlLink);
+      dlLink.click();
+      setTimeout(()=>document.body.removeChild(dlLink),1000);
+      toast(`PDF downloaded: ${fname}`,'success');
+    }catch(anchorErr){
+      toast('Download failed — try a different browser','error');
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════
