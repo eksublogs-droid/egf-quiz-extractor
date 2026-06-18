@@ -2139,8 +2139,8 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
       const aUrl = driveDownloadUrl(aResult.id);
       btn.innerHTML = '📦 Creating packages…';
       const [qPkg, aPkg] = await Promise.all([
-        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${extractedData?.courseUniversity||''}`.trim(), linkLabel: 'Download Past Questions (No Answers)', fileUrl: qUrl, fileName: qResult.name, fileSize: qBlob.size, basePrice: 0 }),
-        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${extractedData?.courseUniversity||''}`.trim(), linkLabel: 'Download Past Questions with Answers', fileUrl: aUrl, fileName: aResult.name, fileSize: aBlob.size, basePrice: 200 })
+        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${extractedData?.courseUniversity||''}`.trim() + ' — Ques Only', linkLabel: 'Download Past Questions (No Answers)', fileUrl: qUrl, fileName: qResult.name, fileSize: qBlob.size, basePrice: 0 }),
+        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${extractedData?.courseUniversity||''}`.trim() + ' — Q+A', linkLabel: 'Download Past Questions with Answers', fileUrl: aUrl, fileName: aResult.name, fileSize: aBlob.size, basePrice: 200 })
       ]);
       btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
       btn.disabled = false;
