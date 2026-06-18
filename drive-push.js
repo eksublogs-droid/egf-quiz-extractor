@@ -285,6 +285,24 @@ async function pushToDrive(){
   // Give the browser a tick to repaint the button label before heavy work starts
   const tick = () => new Promise(r => setTimeout(r, 60));
 
+  // ── STRAY-DOWNLOAD GUARD ──
+  // Belt-and-suspenders on top of the proto.save interception below: for the
+  // entire duration of the push (generation + upload), block any anchor click
+  // that has a download attribute and block window.open. This guarantees the
+  // browser's native "Save to Downloads" sheet can never appear during a
+  // Drive push, no matter what triggers it.
+  const _origAnchorClick = HTMLAnchorElement.prototype.click;
+  const _origWindowOpen = window.open;
+  HTMLAnchorElement.prototype.click = function(){
+    if (this.hasAttribute('download')) return;
+    return _origAnchorClick.apply(this, arguments);
+  };
+  window.open = function(){ return null; };
+  const restoreDownloadGuard = () => {
+    HTMLAnchorElement.prototype.click = _origAnchorClick;
+    window.open = _origWindowOpen;
+  };
+
   try {
     setBusy('🔍 Resolving folders…');
     await tick();
@@ -323,5 +341,6 @@ async function pushToDrive(){
     toast(`Drive push failed: ${err.message}`, 'error');
   } finally {
     clearBusy();
+    restoreDownloadGuard();
   }
 }
