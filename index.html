@@ -1975,7 +1975,17 @@ async function downloadPDF(mode){
   const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),title,university.toUpperCase()];
   const fnameBase=fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
   const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
-  doc.save(fname);
+  // Use Blob URL + hidden <a> to avoid browser native download dialog (DuckBrowser etc.)
+  const pdfBlob=doc.output('blob');
+  const pdfUrl=URL.createObjectURL(pdfBlob);
+  const dlLink=document.createElement('a');
+  dlLink.href=pdfUrl;
+  dlLink.download=fname;
+  dlLink.style.display='none';
+  document.body.appendChild(dlLink);
+  dlLink.click();
+  document.body.removeChild(dlLink);
+  setTimeout(()=>URL.revokeObjectURL(pdfUrl),10000);
   toast(`PDF downloaded: ${fname}`,'success');
 }
 
