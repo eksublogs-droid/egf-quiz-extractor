@@ -87,11 +87,54 @@ function capturePDF(mode){
         proto.save = originalSave;
         reject(new Error('PDF generation did not complete (timeout)'));
       }
-    }, 15000);
+    }, 120000);
   });
 }
 
-/* ── DRIVE HELPERS ── */
+/* ── PDF CACHE ──
+   Keeps the two generated PDFs in memory so "Push to Drive" can reuse
+   them instantly instead of rebuilding from scratch every time.
+   Keyed to a snapshot of verifiedData so a stale cache from a previous
+   extraction never gets used by mistake after you re-extract. */
+let _pdfCache = { key: null, questions: null, answers: null, generating: false };
+
+function _currentDataKey(){
+  // Cheap, deterministic fingerprint of the current verified data + course
+  // fields. Good enough to detect "this is a different paper now".
+  try {
+    const len = (typeof verifiedData !== 'undefined' && verifiedData) ? verifiedData.length : 0;
+    const title = (typeof extractedData !== 'undefined' && extractedData) ? extractedData.docTitle : '';
+    const firstQ = (typeof verifiedData !== 'undefined' && verifiedData && verifiedData[0]) ? verifiedData[0].question : '';
+    return `${len}::${title}::${firstQ}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Builds both PDFs in the background (no UI changes, no button state).
+// Safe to call multiple times — if a build is already running or the
+// cache is already current, it does nothing.
+async function pregeneratePDFs(){
+  const key = _currentDataKey();
+  if (!key) return; // nothing to generate yet
+  if (_pdfCache.key === key && _pdfCache.questions && _pdfCache.answers) return; // already cached
+  if (_pdfCache.generating) return; // a build is already in flight
+
+  _pdfCache.generating = true;
+  try {
+    const qPdf = await capturePDF('questions');
+    const aPdf = await capturePDF('answers');
+    _pdfCache = { key, questions: qPdf, answers: aPdf, generating: false };
+  } catch (err) {
+    // Silent on purpose — this is a background convenience pre-build.
+    // If it fails, pushToDrive() will simply build fresh PDFs itself
+    // when actually pressed, same as before this feature existed.
+    console.warn('Background PDF pre-generation failed (will retry on demand):', err.message);
+    _pdfCache = { key: null, questions: null, answers: null, generating: false };
+  }
+}
+
+
 async function driveFetch(url, options = {}){
   const token = await getDriveToken();
   const headers = Object.assign({ 'Authorization': `Bearer ${token}` }, options.headers || {});
@@ -223,11 +266,21 @@ async function pushToDrive(){
 
     const fnameBase = docTitle.replace(/[^a-zA-Z0-9\s]/g,'').replace(/\s+/g,'_');
 
-    setBusy('Generating Questions PDF…');
-    const qPdf = await capturePDF('questions');
+    const key = _currentDataKey();
+    const haveValidCache = _pdfCache.key === key && _pdfCache.questions && _pdfCache.answers;
 
-    setBusy('Generating Q+A PDF…');
-    const aPdf = await capturePDF('answers');
+    let qPdf, aPdf;
+    if (haveValidCache) {
+      setBusy('Using pre-generated PDFs…');
+      qPdf = _pdfCache.questions;
+      aPdf = _pdfCache.answers;
+    } else {
+      setBusy('Generating Questions PDF…');
+      qPdf = await capturePDF('questions');
+
+      setBusy('Generating Q+A PDF…');
+      aPdf = await capturePDF('answers');
+    }
 
     setBusy('Uploading Questions PDF…');
     await uploadFileToFolder(qPdf.blob, `${fnameBase}_Questions.pdf`, dest.semesterFolderId);
