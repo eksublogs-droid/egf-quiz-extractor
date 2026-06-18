@@ -70,38 +70,77 @@ function capturePDF(mode){
       return;
     }
 
+    // Suppress the "PDF downloaded" toast that downloadPDF fires after doc.save()
+    // so it doesn't pop up confusingly during a Drive push.
+    const originalToast = window.toast;
+    window.toast = function(msg, type){
+      if (type === 'success' && typeof msg === 'string' && msg.startsWith('PDF downloaded')) return;
+      if (originalToast) originalToast.apply(this, arguments);
+    };
+
     const proto = window.jspdf.jsPDF.prototype;
     const originalSave = proto.save;
     let settled = false;
 
-    // Install our interceptor BEFORE downloadPDF() runs.
-    // It fires synchronously the moment doc.save(fname) is called inside
-    // downloadPDF, grabs the bytes, resolves, and immediately restores
-    // the real save — all before downloadPDF()'s stack frame returns.
+    /* ── INTERCEPT 1: jsPDF proto.save ──────────────────────────────
+       Grabs bytes via output('blob') and resolves WITHOUT calling
+       the real save(), so no browser download fires.
+       ────────────────────────────────────────────────────────────── */
     proto.save = function(filename){
-      if (settled) {
-        // Shouldn't happen, but be safe: restore and do nothing.
-        proto.save = originalSave;
-        return;
-      }
+      if (settled) { proto.save = originalSave; return; }
       settled = true;
-      proto.save = originalSave; // restore real save NOW, before anything else
-
+      proto.save = originalSave;
+      restoreAll();
       try {
         const blob = this.output('blob');
         resolve({ blob, filename: filename || 'document.pdf' });
       } catch (err) {
         reject(err);
       }
-      // We intentionally do NOT call originalSave here.
-      // That is what prevents the browser download from firing.
+      // Intentionally do NOT call originalSave — this is what blocks the download.
     };
 
-    // Safety timeout — restore real save and reject if PDF never finishes.
+    /* ── INTERCEPT 2: URL.createObjectURL ───────────────────────────
+       Some builds of jsPDF (and wrapper code) create a blob URL then
+       do anchor.click() rather than going through proto.save.
+       We intercept the blob creation so we have the bytes, and we
+       return a dummy URL so the rest of the code doesn't crash.
+       The anchor.click() will fire on 'blob:intercepted' which the
+       browser silently ignores — no download popup.
+       ────────────────────────────────────────────────────────────── */
+    const origCreateObjectURL = URL.createObjectURL.bind(URL);
+    let _interceptedBlob = null;
+    URL.createObjectURL = function(blobOrFile){
+      const t = blobOrFile instanceof Blob ? blobOrFile.type : '';
+      const looksLikePDF = t === 'application/pdf' || t === '' || t === 'application/octet-stream';
+      if (!settled && looksLikePDF) {
+        _interceptedBlob = blobOrFile;
+        // Resolve now if proto.save never fires (the anchor path)
+        setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            proto.save = originalSave;
+            restoreAll();
+            resolve({ blob: _interceptedBlob, filename: 'document.pdf' });
+          }
+        }, 0);
+        // Return a real (empty) blob URL so downstream code can't crash on it
+        return origCreateObjectURL(new Blob([], { type: 'application/pdf' }));
+      }
+      return origCreateObjectURL(blobOrFile);
+    };
+
+    function restoreAll(){
+      URL.createObjectURL = origCreateObjectURL;
+      window.toast = originalToast;
+    }
+
+    // Safety timeout — restore everything and reject if PDF never finishes.
     const timeoutId = setTimeout(() => {
       if (!settled) {
         settled = true;
         proto.save = originalSave;
+        restoreAll();
         reject(new Error('PDF generation did not complete within 120s (timeout)'));
       }
     }, 120000);
@@ -114,6 +153,7 @@ function capturePDF(mode){
       if (!settled) {
         settled = true;
         proto.save = originalSave;
+        restoreAll();
         clearTimeout(timeoutId);
         reject(err);
       }
@@ -122,11 +162,12 @@ function capturePDF(mode){
 
     if (ret && typeof ret.then === 'function') {
       ret.then(
-        () => { clearTimeout(timeoutId); }, // success handled via proto.save above
+        () => { clearTimeout(timeoutId); },
         (err) => {
           if (!settled) {
             settled = true;
             proto.save = originalSave;
+            restoreAll();
             clearTimeout(timeoutId);
             reject(err);
           }
@@ -272,8 +313,12 @@ async function pushToDrive(){
   const setBusy = (label) => { if (btn) { btn.disabled = true; btn.dataset.origLabel = btn.dataset.origLabel || btn.innerHTML; btn.innerHTML = label; } };
   const clearBusy = () => { if (btn) { btn.disabled = false; if (btn.dataset.origLabel) btn.innerHTML = btn.dataset.origLabel; } };
 
+  // Give the browser a tick to repaint the button label before heavy work starts
+  const tick = () => new Promise(r => setTimeout(r, 60));
+
   try {
-    setBusy('Resolving folders…');
+    setBusy('🔍 Resolving folders…');
+    await tick();
     const university = (extractedData && extractedData.courseUniversity) || '';
     const faculty     = (extractedData && extractedData.courseFaculty) || '';
     const semester    = (extractedData && extractedData.courseSemester) || '';
@@ -283,16 +328,20 @@ async function pushToDrive(){
 
     const fnameBase = docTitle.replace(/[^a-zA-Z0-9\s]/g,'').replace(/\s+/g,'_');
 
-    setBusy('Generating Questions PDF…');
+    setBusy('📄 Generating Questions PDF…');
+    await tick();
     const qPdf = await capturePDF('questions');
 
-    setBusy('Generating Q+A PDF…');
+    setBusy('📝 Generating Q+A PDF…');
+    await tick();
     const aPdf = await capturePDF('answers');
 
-    setBusy('Uploading Questions PDF…');
+    setBusy('☁️ Uploading Questions PDF…');
+    await tick();
     await uploadFileToFolder(qPdf.blob, `${fnameBase}_Questions.pdf`, dest.semesterFolderId);
 
-    setBusy('Uploading Q+A PDF…');
+    setBusy('☁️ Uploading Q+A PDF…');
+    await tick();
     await uploadFileToFolder(aPdf.blob, `${fnameBase}_QA.pdf`, dest.semesterFolderId);
 
     toast(`Pushed to Drive: ${dest.universityName} / faculty / ${dest.facultyName} / ${dest.semesterName}`, 'success');
