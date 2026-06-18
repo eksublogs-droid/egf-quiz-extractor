@@ -59,7 +59,169 @@ async function getDriveToken(){
    patch fires — that can't happen here because jsPDF is synchronous
    inside downloadPDF (no await between new jsPDF() and doc.save()).    */
 
-function capturePDF(mode){\n  return new Promise((resolve, reject) => {\n    if (typeof downloadPDF !== 'function') {\n      reject(new Error('downloadPDF() not found — is the main script loaded?'));\n      return;\n    }\n    if (!window.jspdf || !window.jspdf.jsPDF) {\n      reject(new Error('jsPDF not loaded'));\n      return;\n    }\n\n    // Suppress the \"PDF downloaded\" toast that downloadPDF fires after doc.save()\n    // so it doesn't pop up confusingly during a Drive push.\n    const originalToast = window.toast;\n    window.toast = function(msg, type){\n      if (type === 'success' && typeof msg === 'string' && msg.startsWith('PDF downloaded')) return;\n      if (originalToast) originalToast.apply(this, arguments);\n    };\n\n    let settled = false;\n    let capturedFilename = 'document.pdf';\n\n    /* ── INTERCEPT: jsPDF output('datauristring') approach ──────────────\n       downloadPDF now writes a data URI into a hidden iframe.\n       We intercept at jsPDF.prototype.output so we can grab the blob\n       before the iframe approach fires, and simultaneously block\n       the iframe from actually downloading. Strategy:\n       1. Patch jsPDF.prototype.output to capture raw PDF bytes when\n          called with 'datauristring' or 'blob'.\n       2. Patch iframe contentDocument.write to be a no-op (preventing\n          the auto-download link from being written and clicked).\n       ────────────────────────────────────────────────────────────── */\n    const jsPDFProto = window.jspdf.jsPDF.prototype;\n    const originalOutput = jsPDFProto.output;\n\n    jsPDFProto.output = function(type, options){\n      const result = originalOutput.apply(this, arguments);\n      if (!settled) {\n        if (type === 'blob' || type === 'arraybuffer') {\n          // Already a blob or buffer\n          const blob = (type === 'blob') ? result : new Blob([result], { type: 'application/pdf' });\n          settled = true;\n          jsPDFProto.output = originalOutput;\n          restoreAll();\n          clearTimeout(timeoutId);\n          resolve({ blob, filename: capturedFilename });\n        } else if (type === 'datauristring' || type === 'datauri' || type === 'dataurl') {\n          // Convert data URI string to blob\n          try {\n            const base64 = String(result).split(',')[1];\n            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));\n            const blob = new Blob([bytes], { type: 'application/pdf' });\n            settled = true;\n            jsPDFProto.output = originalOutput;\n            restoreAll();\n            clearTimeout(timeoutId);\n            resolve({ blob, filename: capturedFilename });\n          } catch(e) {\n            // Conversion failed; fall through\n          }\n        }\n      }\n      return result;\n    };\n\n    /* ── INTERCEPT: block iframe write that triggers auto-download ──────\n       The hidden iframe has its contentDocument.write() called with an\n       HTML page containing an auto-clicking <a>. We intercept\n       document.body.appendChild for the iframe element itself, and also\n       patch iframe contentDocument.write to be a no-op once we've\n       captured the PDF bytes. ────────────────────────────────────────── */\n    const originalAppendChild = document.body.appendChild.bind(document.body);\n    document.body.appendChild = function(el){\n      // Block any hidden <a> used for download (legacy path)\n      if (el && el.tagName === 'A' && el.download && (el.download.endsWith('.pdf') || el.download.endsWith('.json'))) {\n        capturedFilename = el.download;\n        return el; // don't append\n      }\n      // For iframes being inserted, patch their write method to suppress the download HTML\n      if (el && el.tagName === 'IFRAME') {\n        const result = originalAppendChild(el);\n        // Patch contentDocument.write after the iframe is in the DOM\n        try {\n          const iDoc = el.contentDocument || (el.contentWindow && el.contentWindow.document);\n          if (iDoc) {\n            const originalWrite = iDoc.write.bind(iDoc);\n            iDoc.write = function(html){\n              // If this write contains a PDF data URI download, suppress it\n              if (typeof html === 'string' && html.includes('data:application/pdf')) {\n                // Extract filename from the download attribute if present\n                const fnMatch = html.match(/download=\"([^\"]+\.pdf)\"/);\n                if (fnMatch) capturedFilename = fnMatch[1].replace(/&quot;/g, '"');\n                iDoc.write = originalWrite; // restore\n                return; // block the write — PDF already captured via output() patch\n              }\n              return originalWrite(html);\n            };\n          }\n        } catch(e) { /* cross-origin iframe — ignore */ }\n        return result;\n      }\n      return originalAppendChild(el);\n    };\n\n    /* ── ALSO intercept URL.createObjectURL as a legacy fallback path ── */\n    const originalCreateObjectURL = URL.createObjectURL.bind(URL);\n    URL.createObjectURL = function(blob){\n      if (!settled && blob instanceof Blob && blob.type === 'application/pdf') {\n        settled = true;\n        URL.createObjectURL = originalCreateObjectURL;\n        restoreAll();\n        clearTimeout(timeoutId);\n        resolve({ blob, filename: capturedFilename });\n        return 'about:blank';\n      }\n      return originalCreateObjectURL(blob);\n    };\n\n    function restoreAll(){\n      window.toast = originalToast;\n      jsPDFProto.output = originalOutput;\n      URL.createObjectURL = originalCreateObjectURL;\n      document.body.appendChild = originalAppendChild;\n    }\n\n    // Safety timeout — restore everything and reject if PDF never finishes.\n    const timeoutId = setTimeout(() => {\n      if (!settled) {\n        settled = true;\n        restoreAll();\n        reject(new Error('PDF generation did not complete within 120s (timeout)'));\n      }\n    }, 120000);\n\n    // Call downloadPDF. If it returns a promise, attach a failure handler.\n    let ret;\n    try {\n      ret = downloadPDF(mode);\n    } catch (err) {\n      if (!settled) {\n        settled = true;\n        restoreAll();\n        clearTimeout(timeoutId);\n        reject(err);\n      }\n      return;\n    }\n\n    if (ret && typeof ret.then === 'function') {\n      ret.then(\n        () => { clearTimeout(timeoutId); },\n        (err) => {\n          if (!settled) {\n            settled = true;\n            restoreAll();\n            clearTimeout(timeoutId);\n            reject(err);\n          }\n        }\n      );\n    }\n  });\n}
+function capturePDF(mode){
+  return new Promise((resolve, reject) => {
+    if (typeof downloadPDF !== 'function') {
+      reject(new Error('downloadPDF() not found — is the main script loaded?'));
+      return;
+    }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      reject(new Error('jsPDF not loaded'));
+      return;
+    }
+
+    // Suppress the "PDF downloaded" toast that downloadPDF fires after doc.save()
+    // so it doesn't pop up confusingly during a Drive push.
+    const originalToast = window.toast;
+    window.toast = function(msg, type){
+      if (type === 'success' && typeof msg === 'string' && msg.startsWith('PDF downloaded')) return;
+      if (originalToast) originalToast.apply(this, arguments);
+    };
+
+    let settled = false;
+    let capturedFilename = 'document.pdf';
+
+    /* ── INTERCEPT: jsPDF output('datauristring') approach ──────────────
+       downloadPDF now writes a data URI into a hidden iframe.
+       We intercept at jsPDF.prototype.output so we can grab the blob
+       before the iframe approach fires, and simultaneously block
+       the iframe from actually downloading. Strategy:
+       1. Patch jsPDF.prototype.output to capture raw PDF bytes when
+          called with 'datauristring' or 'blob'.
+       2. Patch iframe contentDocument.write to be a no-op (preventing
+          the auto-download link from being written and clicked).
+       ────────────────────────────────────────────────────────────── */
+    const jsPDFProto = window.jspdf.jsPDF.prototype;
+    const originalOutput = jsPDFProto.output;
+
+    jsPDFProto.output = function(type, options){
+      const result = originalOutput.apply(this, arguments);
+      if (!settled) {
+        if (type === 'blob' || type === 'arraybuffer') {
+          // Already a blob or buffer
+          const blob = (type === 'blob') ? result : new Blob([result], { type: 'application/pdf' });
+          settled = true;
+          jsPDFProto.output = originalOutput;
+          restoreAll();
+          clearTimeout(timeoutId);
+          resolve({ blob, filename: capturedFilename });
+        } else if (type === 'datauristring' || type === 'datauri' || type === 'dataurl') {
+          // Convert data URI string to blob
+          try {
+            const base64 = String(result).split(',')[1];
+            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+            settled = true;
+            jsPDFProto.output = originalOutput;
+            restoreAll();
+            clearTimeout(timeoutId);
+            resolve({ blob, filename: capturedFilename });
+          } catch(e) {
+            // Conversion failed; fall through
+          }
+        }
+      }
+      return result;
+    };
+
+    /* ── INTERCEPT: block iframe write that triggers auto-download ──────
+       The hidden iframe has its contentDocument.write() called with an
+       HTML page containing an auto-clicking <a>. We intercept
+       document.body.appendChild for the iframe element itself, and also
+       patch iframe contentDocument.write to be a no-op once we've
+       captured the PDF bytes. ────────────────────────────────────────── */
+    const originalAppendChild = document.body.appendChild.bind(document.body);
+    document.body.appendChild = function(el){
+      // Block any hidden <a> used for download (legacy path)
+      if (el && el.tagName === 'A' && el.download && (el.download.endsWith('.pdf') || el.download.endsWith('.json'))) {
+        capturedFilename = el.download;
+        return el; // don't append
+      }
+      // For iframes being inserted, patch their write method to suppress the download HTML
+      if (el && el.tagName === 'IFRAME') {
+        const result = originalAppendChild(el);
+        // Patch contentDocument.write after the iframe is in the DOM
+        try {
+          const iDoc = el.contentDocument || (el.contentWindow && el.contentWindow.document);
+          if (iDoc) {
+            const originalWrite = iDoc.write.bind(iDoc);
+            iDoc.write = function(html){
+              // If this write contains a PDF data URI download, suppress it
+              if (typeof html === 'string' && html.includes('data:application/pdf')) {
+                // Extract filename from the download attribute if present
+                const fnMatch = html.match(/download="([^"]+\.pdf)"/);
+                if (fnMatch) capturedFilename = fnMatch[1].replace(/&quot;/g, '"');
+                iDoc.write = originalWrite; // restore
+                return; // block the write — PDF already captured via output() patch
+              }
+              return originalWrite(html);
+            };
+          }
+        } catch(e) { /* cross-origin iframe — ignore */ }
+        return result;
+      }
+      return originalAppendChild(el);
+    };
+
+    /* ── ALSO intercept URL.createObjectURL as a legacy fallback path ── */
+    const originalCreateObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = function(blob){
+      if (!settled && blob instanceof Blob && blob.type === 'application/pdf') {
+        settled = true;
+        URL.createObjectURL = originalCreateObjectURL;
+        restoreAll();
+        clearTimeout(timeoutId);
+        resolve({ blob, filename: capturedFilename });
+        return 'about:blank';
+      }
+      return originalCreateObjectURL(blob);
+    };
+
+    function restoreAll(){
+      window.toast = originalToast;
+      jsPDFProto.output = originalOutput;
+      URL.createObjectURL = originalCreateObjectURL;
+      document.body.appendChild = originalAppendChild;
+    }
+
+    // Safety timeout — restore everything and reject if PDF never finishes.
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        restoreAll();
+        reject(new Error('PDF generation did not complete within 120s (timeout)'));
+      }
+    }, 120000);
+
+    // Call downloadPDF. If it returns a promise, attach a failure handler.
+    let ret;
+    try {
+      ret = downloadPDF(mode);
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        restoreAll();
+        clearTimeout(timeoutId);
+        reject(err);
+      }
+      return;
+    }
+
+    if (ret && typeof ret.then === 'function') {
+      ret.then(
+        () => { clearTimeout(timeoutId); },
+        (err) => {
+          if (!settled) {
+            settled = true;
+            restoreAll();
+            clearTimeout(timeoutId);
+            reject(err);
+          }
+        }
+      );
+    }
+  });
+}
 
 
 
