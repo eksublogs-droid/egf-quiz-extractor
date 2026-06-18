@@ -5,6 +5,14 @@
    tag placed AFTER jspdf and AFTER your main file's <script> block.
    ════════════════════════════════════════════════════════ */
 
+/* ── ERUDA mobile console (remove after debugging is done) ── */
+(function () {
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+  s.onload = function () { eruda.init(); };
+  document.head.appendChild(s);
+})();
+
 const DRIVE_ROOT_FOLDER_ID = '1XrTE9MJjUL64obYNXmP3OB-piuSVDL59'; // "Uni Past Questions Files"
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
@@ -436,7 +444,10 @@ async function pushToDrive(){
 
     // Inject WPDM button now that we have both Drive file results
     if (typeof initWpdmButton === 'function') {
-      initWpdmButton(qResult, aResult, qPdf.blob, aPdf.blob);
+      await initWpdmButton(qResult, aResult, qPdf.blob, aPdf.blob);
+    } else {
+      console.error('[drive-push] initWpdmButton not found — is wpdm-push.js loaded before drive-push.js in index.html?');
+      toast('Drive push succeeded but WPDM button unavailable — check wpdm-push.js is loaded', 'error');
     }
   } catch (err) {
     console.error(err);
