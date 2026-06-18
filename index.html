@@ -1483,10 +1483,6 @@ ${conflictQuestionsText}`;
       showTab('sectionQuestions');
       document.getElementById('jumpNav').scrollIntoView({behavior:'smooth',block:'start'});
       toast(`${verifiedData.length} questions extracted and verified successfully!`,'success');
-      // Quietly pre-build both PDFs in the background so "Push to Drive"
-      // can be near-instant later. Defined in drive-push.js; safe no-op
-      // if that script hasn't loaded for any reason.
-      if (typeof pregeneratePDFs === 'function') pregeneratePDFs();
     },500);
 
   }catch(err){
