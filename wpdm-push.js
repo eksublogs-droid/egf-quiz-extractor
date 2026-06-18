@@ -4,17 +4,10 @@
    Injected by drive-push.js after a successful Drive push.
    ════════════════════════════════════════════════════════ */
 
-const WPDM_SITE     = 'https://eduglobalforge.com/pastquestions';
-const WPDM_API_KEY  = '6a343066741d8';
-const WP_USER       = 'testblog';
-const WP_APP_PASS   = '1GTK Tb1w herl 3lqC 5auj pNzW';
-const WPDM_CAT_ID   = 419; // "Past Questions"
+const WPDM_SITE       = 'https://eduglobalforge.com/pastquestions';
+const WPDM_API_KEY    = '6a343066741d8';
+const WPDM_CAT_ID     = 419; // "Past Questions"
 const DRIVE_API_FILES = 'https://www.googleapis.com/drive/v3/files';
-
-/* ── Bearer token header for WPDM API ── */
-function wpdmAuthHeader() {
-  return `Bearer ${WPDM_API_KEY}`;
-}
 
 /* ── Set a Drive file to "Anyone with link can view" ── */
 async function makePublic(fileId) {
@@ -38,7 +31,7 @@ function driveDownloadUrl(fileId) {
   return `https://drive.google.com/uc?export=download&id=${fileId}`;
 }
 
-/* ── Format bytes into human-readable size string e.g. "2.3 MB" ── */
+/* ── Format bytes into human-readable size string e.g. "2.30 MB" ── */
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
@@ -64,7 +57,7 @@ async function createWpdmPackage({ title, linkLabel, fileUrl, fileName, fileSize
     method: 'POST',
     headers: {
       'Content-Type':  'application/json',
-      'Authorization': wpdmAuthHeader()
+      'Authorization': `Bearer ${WPDM_API_KEY}`
     },
     body: JSON.stringify(body)
   });
@@ -87,10 +80,12 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
   if (existing) existing.remove();
 
   const driveBtn = document.getElementById('pushDriveBtn');
+  const jumpNav  = document.getElementById('jumpNav');
+
   const btn = document.createElement('button');
   btn.id        = 'wpdmPushBtn';
-  btn.className = driveBtn ? driveBtn.className : 'jump-btn';
-  btn.innerHTML = '📦 Create WPDM Packages';
+  btn.className = 'jump-btn';
+  btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
 
   btn.onclick = async () => {
     btn.disabled  = true;
@@ -112,41 +107,42 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
       btn.innerHTML = '📦 Creating packages…';
       const [qPkg, aPkg] = await Promise.all([
         createWpdmPackage({
-          title:      qResult.name,
-          linkLabel:  'Download Past Questions (No Answers)',
-          fileUrl:    qUrl,
-          fileName:   qResult.name,
-          fileSize:   qBlob.size,
-          basePrice:  0
+          title:     qResult.name,
+          linkLabel: 'Download Past Questions (No Answers)',
+          fileUrl:   qUrl,
+          fileName:  qResult.name,
+          fileSize:  qBlob.size,
+          basePrice: 0
         }),
         createWpdmPackage({
-          title:      aResult.name,
-          linkLabel:  'Download Past Questions with Answers',
-          fileUrl:    aUrl,
-          fileName:   aResult.name,
-          fileSize:   aBlob.size,
-          basePrice:  200
+          title:     aResult.name,
+          linkLabel: 'Download Past Questions with Answers',
+          fileUrl:   aUrl,
+          fileName:  aResult.name,
+          fileSize:  aBlob.size,
+          basePrice: 200
         })
       ]);
 
-      btn.innerHTML = '✅ Packages Created!';
+      btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
       btn.disabled  = false;
 
       toast(`WPDM packages created!\n• ${qPkg.title || qResult.name}\n• ${aPkg.title || aResult.name}`, 'success');
 
     } catch (err) {
       console.error(err);
-      btn.innerHTML = '📦 Create WPDM Packages';
+      btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
       btn.disabled  = false;
       toast(`WPDM push failed: ${err.message}`, 'error');
     }
   };
 
-  // Inject button right after the Drive button
-  if (driveBtn && driveBtn.parentNode) {
-    driveBtn.parentNode.insertBefore(btn, driveBtn.nextSibling);
+  // Append inside jumpNav (same container as pushDriveBtn)
+  if (jumpNav) {
+    jumpNav.appendChild(btn);
+  } else if (driveBtn && driveBtn.parentNode) {
+    driveBtn.parentNode.appendChild(btn);
   } else {
     document.body.appendChild(btn);
   }
-    }
-        
+}
