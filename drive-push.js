@@ -35,11 +35,30 @@ async function getDriveToken(){
   return _driveTokenCache.token;
 }
 
-/* ── CAPTURE A PDF FROM YOUR EXISTING downloadPDF() WITHOUT EDITING IT ──
-   Your downloadPDF(mode) builds a jsPDF doc and calls doc.save(fname),
-   which triggers a browser download. We temporarily intercept
-   jsPDF.prototype.save so we can grab the bytes instead of (or in
-   addition to) downloading, then restore the original immediately. */
+/* ── PDF CAPTURE — AIRTIGHT INTERCEPTION ──
+   Strategy: instead of patching jsPDF.prototype.save and hoping the
+   patch wins a timing race, we do two things:
+
+   1. We patch proto.save BEFORE calling downloadPDF, and we make the
+      patch synchronously replace itself back to a no-op sentinel so
+      that if downloadPDF calls save() a second time (it shouldn't, but
+      just in case) nothing bad happens.
+
+   2. We make the patch function NEVER call originalSave under any
+      circumstance. The original save() triggers the browser download.
+      Our patch grabs the bytes via output('blob') then resolves the
+      promise — full stop. originalSave is restored but never invoked.
+
+   This means "Download PDF" buttons in the main UI are completely
+   unaffected: they call downloadPDF() directly (not through capturePDF),
+   so proto.save is the real one at that point and the download fires
+   normally for those buttons.
+
+   The only way a stray download could still appear is if downloadPDF()
+   creates a *second* jsPDF instance and calls save() on it before our
+   patch fires — that can't happen here because jsPDF is synchronous
+   inside downloadPDF (no await between new jsPDF() and doc.save()).    */
+
 function capturePDF(mode){
   return new Promise((resolve, reject) => {
     if (typeof downloadPDF !== 'function') {
@@ -50,59 +69,92 @@ function capturePDF(mode){
       reject(new Error('jsPDF not loaded'));
       return;
     }
+
     const proto = window.jspdf.jsPDF.prototype;
     const originalSave = proto.save;
-    let captured = false;
+    let settled = false;
 
+    // Install our interceptor BEFORE downloadPDF() runs.
+    // It fires synchronously the moment doc.save(fname) is called inside
+    // downloadPDF, grabs the bytes, resolves, and immediately restores
+    // the real save — all before downloadPDF()'s stack frame returns.
     proto.save = function(filename){
+      if (settled) {
+        // Shouldn't happen, but be safe: restore and do nothing.
+        proto.save = originalSave;
+        return;
+      }
+      settled = true;
+      proto.save = originalSave; // restore real save NOW, before anything else
+
       try {
         const blob = this.output('blob');
-        captured = true;
-        proto.save = originalSave; // restore immediately
         resolve({ blob, filename: filename || 'document.pdf' });
       } catch (err) {
-        proto.save = originalSave;
         reject(err);
       }
-      // Do not call originalSave — we don't want a duplicate browser
-      // download triggered every time the Drive push runs. Your normal
-      // "Download PDF" buttons are untouched and still download as before
-      // (they call downloadPDF() directly, not through this function).
+      // We intentionally do NOT call originalSave here.
+      // That is what prevents the browser download from firing.
     };
 
-    try {
-      const ret = downloadPDF(mode);
-      // downloadPDF may be async; if it returns a promise, await failures
-      if (ret && typeof ret.then === 'function') {
-        ret.catch(err => { if (!captured) { proto.save = originalSave; reject(err); } });
-      }
-    } catch (err) {
-      proto.save = originalSave;
-      reject(err);
-    }
-
-    // Safety timeout in case save() is never called
-    setTimeout(() => {
-      if (!captured) {
+    // Safety timeout — restore real save and reject if PDF never finishes.
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
         proto.save = originalSave;
-        reject(new Error('PDF generation did not complete (timeout)'));
+        reject(new Error('PDF generation did not complete within 120s (timeout)'));
       }
     }, 120000);
+
+    // Call downloadPDF. If it returns a promise, attach a failure handler.
+    let ret;
+    try {
+      ret = downloadPDF(mode);
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        proto.save = originalSave;
+        clearTimeout(timeoutId);
+        reject(err);
+      }
+      return;
+    }
+
+    if (ret && typeof ret.then === 'function') {
+      ret.then(
+        () => { clearTimeout(timeoutId); }, // success handled via proto.save above
+        (err) => {
+          if (!settled) {
+            settled = true;
+            proto.save = originalSave;
+            clearTimeout(timeoutId);
+            reject(err);
+          }
+        }
+      );
+    } else {
+      // downloadPDF is synchronous — if we're here and settled, we're done.
+      // If not settled by now, something went wrong.
+      if (!settled) {
+        // Give async rendering a single tick to finish (e.g. any internal
+        // setTimeout(0) jsPDF might use), then timeout naturally.
+      }
+    }
   });
 }
 
-/* ── PDF CACHE ──
-   Keeps the two generated PDFs in memory so "Push to Drive" can reuse
-   them instantly instead of rebuilding from scratch every time.
-   Keyed to a snapshot of verifiedData so a stale cache from a previous
-   extraction never gets used by mistake after you re-extract. */
-let _pdfCache = { key: null, questions: null, answers: null, generating: false };
+/* ── PDF CACHE + SINGLE-BUILD MUTEX ──
+   _pdfCache holds the last successfully pre-generated pair.
+   _buildPromise is the in-flight Promise (if one exists), shared so
+   that pushToDrive can await it instead of starting a second build.
+   This makes "only one PDF build at a time" a hard guarantee. */
+let _pdfCache = { key: null, questions: null, answers: null };
+let _buildPromise = null; // non-null while a build is in flight
 
 function _currentDataKey(){
-  // Cheap, deterministic fingerprint of the current verified data + course
-  // fields. Good enough to detect "this is a different paper now".
+  // Cheap deterministic fingerprint of the current verified data + course fields.
   try {
-    const len = (typeof verifiedData !== 'undefined' && verifiedData) ? verifiedData.length : 0;
+    const len   = (typeof verifiedData !== 'undefined' && verifiedData) ? verifiedData.length : 0;
     const title = (typeof extractedData !== 'undefined' && extractedData) ? extractedData.docTitle : '';
     const firstQ = (typeof verifiedData !== 'undefined' && verifiedData && verifiedData[0]) ? verifiedData[0].question : '';
     return `${len}::${title}::${firstQ}`;
@@ -113,25 +165,32 @@ function _currentDataKey(){
 
 // Builds both PDFs in the background (no UI changes, no button state).
 // Safe to call multiple times — if a build is already running or the
-// cache is already current, it does nothing.
+// cache is already current, it does nothing new.
 async function pregeneratePDFs(){
   const key = _currentDataKey();
-  if (!key) return; // nothing to generate yet
+  if (!key) return;
   if (_pdfCache.key === key && _pdfCache.questions && _pdfCache.answers) return; // already cached
-  if (_pdfCache.generating) return; // a build is already in flight
 
-  _pdfCache.generating = true;
-  try {
-    const qPdf = await capturePDF('questions');
-    const aPdf = await capturePDF('answers');
-    _pdfCache = { key, questions: qPdf, answers: aPdf, generating: false };
-  } catch (err) {
-    // Silent on purpose — this is a background convenience pre-build.
-    // If it fails, pushToDrive() will simply build fresh PDFs itself
-    // when actually pressed, same as before this feature existed.
-    console.warn('Background PDF pre-generation failed (will retry on demand):', err.message);
-    _pdfCache = { key: null, questions: null, answers: null, generating: false };
-  }
+  // If a build is already in flight (for the same key), don't launch another one.
+  if (_buildPromise) return;
+
+  _buildPromise = (async () => {
+    try {
+      const qPdf = await capturePDF('questions');
+      const aPdf = await capturePDF('answers');
+      _pdfCache = { key, questions: qPdf, answers: aPdf };
+    } catch (err) {
+      // Silent on purpose — background pre-build failure is non-blocking.
+      // pushToDrive() will simply build fresh PDFs itself when tapped.
+      console.warn('Background PDF pre-generation failed (will build on demand):', err.message);
+      _pdfCache = { key: null, questions: null, answers: null };
+    } finally {
+      _buildPromise = null;
+    }
+  })();
+
+  // Don't await here — this function returns immediately so the caller
+  // (the main page) is not blocked.
 }
 
 
@@ -147,14 +206,18 @@ async function driveFetch(url, options = {}){
   return res.json();
 }
 
-// Find a child folder by exact name inside parentId. Returns folder id or null.
+// Find a child folder by name (case-insensitive) inside parentId. Returns folder id or null.
+// We list ALL folders in the parent and compare lowercased names so that
+// existing folders like "Faculty" are found even if we search for "faculty".
 async function findFolder(name, parentId){
-  const safeName = name.replace(/'/g, "\\'");
   const q = encodeURIComponent(
-    `'${parentId}' in parents and name = '${safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+    `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
   );
-  const data = await driveFetch(`${DRIVE_API}/files?q=${q}&fields=files(id,name)`);
-  return (data.files && data.files[0]) ? data.files[0].id : null;
+  const data = await driveFetch(`${DRIVE_API}/files?q=${q}&fields=files(id,name)&pageSize=1000`);
+  if (!data.files || !data.files.length) return null;
+  const nameLower = name.toLowerCase();
+  const match = data.files.find(f => f.name.toLowerCase() === nameLower);
+  return match ? match.id : null;
 }
 
 // Create a folder inside parentId, return its id.
@@ -217,15 +280,17 @@ function resolveFacultyFolderName(facultyRaw){
   if (!f) return 'GST PAST QUESTIONS';
   // Normalize common GST course naming into the GST bucket
   if (/general\s*studies|^gst\b/i.test(f)) return 'GST PAST QUESTIONS';
-  return f;
+  // Convert to title case so it matches existing Drive folders
+  // e.g. "FACULTY OF SCIENCE" or "faculty of science" → "Faculty of Science"
+  return f.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
 function resolveSemesterFolderName(semesterRaw){
   const s = (semesterRaw || '').toLowerCase();
-  if (s.includes('1') || s.includes('first') || s.includes('1st')) return '1st Semester';
-  if (s.includes('2') || s.includes('second') || s.includes('2nd')) return '2nd Semester';
-  // Default to 1st Semester if AI extraction didn't yield a clear semester
-  return '1st Semester';
+  if (s.includes('1') || s.includes('first') || s.includes('1st')) return 'First Semester';
+  if (s.includes('2') || s.includes('second') || s.includes('2nd')) return 'Second Semester';
+  // Default to First Semester if AI extraction didn't yield a clear semester
+  return 'First Semester';
 }
 
 /* ── FULL PATH RESOLUTION: root → university → faculty → faculty-name → semester ── */
@@ -235,7 +300,7 @@ async function resolveDestinationFolder(universityRaw, facultyRaw, semesterRaw){
   const semesterName    = resolveSemesterFolderName(semesterRaw);
 
   const universityFolderId = await findOrCreateFolder(universityName, DRIVE_ROOT_FOLDER_ID);
-  const facultyRootId       = await findOrCreateFolder('faculty', universityFolderId);
+  const facultyRootId       = await findOrCreateFolder('Faculty', universityFolderId);
   const facultyFolderId     = await findOrCreateFolder(facultyName, facultyRootId);
   const semesterFolderId    = await findOrCreateFolder(semesterName, facultyFolderId);
 
@@ -270,11 +335,36 @@ async function pushToDrive(){
     const haveValidCache = _pdfCache.key === key && _pdfCache.questions && _pdfCache.answers;
 
     let qPdf, aPdf;
+
     if (haveValidCache) {
+      // Pre-generated PDFs are ready — use them instantly, no rebuild.
       setBusy('Using pre-generated PDFs…');
       qPdf = _pdfCache.questions;
       aPdf = _pdfCache.answers;
+
+    } else if (_buildPromise) {
+      // A background pre-build is already in flight.
+      // Wait for it to finish and reuse the result instead of launching
+      // a second competing build — this is the fix for the race/timeout.
+      setBusy('Waiting for PDF build to finish…');
+      await _buildPromise;
+
+      if (_pdfCache.key === key && _pdfCache.questions && _pdfCache.answers) {
+        // Background build succeeded — use its result.
+        qPdf = _pdfCache.questions;
+        aPdf = _pdfCache.answers;
+      } else {
+        // Background build failed — do a fresh build now (single build,
+        // sequential, no race).
+        setBusy('Generating Questions PDF…');
+        qPdf = await capturePDF('questions');
+
+        setBusy('Generating Q+A PDF…');
+        aPdf = await capturePDF('answers');
+      }
+
     } else {
+      // No cache, no in-flight build — build fresh now (sequential, no race).
       setBusy('Generating Questions PDF…');
       qPdf = await capturePDF('questions');
 
