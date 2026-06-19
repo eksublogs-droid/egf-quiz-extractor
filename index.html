@@ -749,14 +749,7 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         WordPress Connection (eduglobalforge.com)
       </div>
-      <input type="text" id="wpUsername" placeholder="WP username" style="margin-bottom:8px;width:100%;background:var(--navy-hover);border:1px solid var(--white-faint);border-radius:6px;padding:8px 12px;color:var(--white);font-family:var(--font-mono);font-size:13px"/>
-      <div class="input-with-eye">
-        <input type="password" id="wpAppPassword" placeholder="Application Password (xxxx xxxx xxxx xxxx xxxx xxxx)"/>
-        <button class="eye-toggle" type="button" onclick="toggleEye('wpAppPassword')" aria-label="Show password">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
-      </div>
-      <div class="token-status-line"><div class="token-dot"></div>Stored in this browser's localStorage only — never hardcoded in the file. Generate via wp-admin → Users → Profile → Application Passwords.</div>
+      <div class="token-status-line"><div class="token-dot"></div>Handled server-side — no credentials are stored in this browser.</div>
     </div>
 
     <div id="keySlotsContainer"></div>
@@ -929,15 +922,8 @@ function setPassphrase(p){ if(p) localStorage.setItem(LS_PASSPHRASE,p); else loc
 function getGistId(){ return localStorage.getItem(LS_GIST_ID)||''; }
 function setGistId(id){ if(id) localStorage.setItem(LS_GIST_ID,id); else localStorage.removeItem(LS_GIST_ID); }
 
-// ════════════════════════════════════════════════════════
-//  WORDPRESS APPLICATION PASSWORD (stored locally, never hardcoded)
-// ════════════════════════════════════════════════════════
-const LS_WP_USER = 'egf_wp_user';
-const LS_WP_PW   = 'egf_wp_app_pw';
-function getWpUser(){ return localStorage.getItem(LS_WP_USER)||''; }
-function setWpUser(u){ if(u) localStorage.setItem(LS_WP_USER,u); else localStorage.removeItem(LS_WP_USER); }
-function getWpAppPw(){ return localStorage.getItem(LS_WP_PW)||''; }
-function setWpAppPw(p){ if(p) localStorage.setItem(LS_WP_PW,p); else localStorage.removeItem(LS_WP_PW); }
+// WordPress credentials are no longer stored client-side — handled
+// server-side via /api/wp-proxy.js using Vercel environment variables.
 
 // ---- Crypto: AES-GCM with a PBKDF2-derived key from the passphrase ----
 function b64(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
@@ -998,14 +984,10 @@ function setTokenStatus(text,state){
 // What actually gets synced: Gemini keys + WP credentials, bundled together.
 function buildSyncPayload(records){
   return {
-    wpUser: getWpUser(),
-    wpAppPw: getWpAppPw(),
     keys: records.map(r=>({id:r.id,name:r.label,value:r.key}))
   };
 }
 function applySyncPayload(payload, existingRecords){
-  if(payload.wpUser!==undefined) setWpUser(payload.wpUser);
-  if(payload.wpAppPw!==undefined) setWpAppPw(payload.wpAppPw);
   const byKey={}; existingRecords.forEach(r=>{ byKey[r.key]=r; });
   const list=Array.isArray(payload.keys)?payload.keys:[];
   return list.map(g=>{
@@ -1048,10 +1030,6 @@ function saveKeys(){
     const sameKeyIdx=prevActiveKey?cleaned.findIndex(r=>r.key===prevActiveKey):-1;
     currentKeyIndex=sameKeyIdx!==-1?sameKeyIdx:0;
   }
-
-  // WordPress credentials — saved to localStorage only, never written into the file.
-  setWpUser(document.getElementById('wpUsername').value.trim());
-  setWpAppPw(document.getElementById('wpAppPassword').value.trim());
 
   updateKeyStatus();
   renderActiveKeyBanner();
@@ -1129,8 +1107,6 @@ async function openSettings(){
   document.body.classList.add('modal-open');
 
   document.getElementById('syncPassphrase').value=getPassphrase();
-  document.getElementById('wpUsername').value=getWpUser();
-  document.getElementById('wpAppPassword').value=getWpAppPw();
 
   const passphrase=getPassphrase();
   if(passphrase){
@@ -1142,8 +1118,6 @@ async function openSettings(){
         const payload=await decryptPayload(blob, passphrase);
         const merged=applySyncPayload(payload, loadKeyRecords());
         if(merged.length){ modalKeyDraft=merged; renderKeySlots(); }
-        document.getElementById('wpUsername').value=getWpUser();
-        document.getElementById('wpAppPassword').value=getWpAppPw();
       }
       setTokenStatus('Synced — this passphrase will pull everything on any browser.','connected');
     }catch(e){
@@ -2277,3 +2251,4 @@ function downloadJSON(){
 </div>
 </body>
 </html>
+
