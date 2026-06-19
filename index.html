@@ -2435,6 +2435,19 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+// Public base URL for WPDM package pages on this site, e.g.
+// https://eduglobalforge.com/pastquestions/wpdm-package/{slug}/
+// Must match WP_BASE_URL (server env var) + '/wpdm-package/'.
+const WPDM_PACKAGE_BASE_URL = 'https://eduglobalforge.com/pastquestions/wpdm-package';
+
+function wpdmPackagePageUrl(pkg) {
+  // The WPDM REST API doesn't return a ready-made front-end "link"/"url"
+  // field on package create — only id/slug/etc — so we build the public
+  // package page URL ourselves from the slug it gives back.
+  if (!pkg || !pkg.slug) return null;
+  return `${WPDM_PACKAGE_BASE_URL}/${pkg.slug}/`;
+}
+
 async function createWpdmPackage({ title, linkLabel, fileUrl, fileName, fileSize, basePrice }) {
   const body = {
     title, status: 'publish', categories: [WPDM_CAT_ID],
@@ -2452,7 +2465,15 @@ async function createWpdmPackage({ title, linkLabel, fileUrl, fileName, fileSize
     throw new Error(`WPDM package creation failed (${res.status}): ${text.slice(0, 300)}`);
   }
   const result = await res.json();
-  return result.data || result;
+  const pkg = result.data || result;
+  const pageUrl = wpdmPackagePageUrl(pkg);
+  if (!pageUrl) {
+    console.warn('[wpdm] No slug returned for package, falling back to raw fileUrl for listing link:', pkg);
+  }
+  // Expose both: pageUrl is the WPDM package page link to use in the
+  // PQ listing; sourceFileUrl is the original Drive URL used as the
+  // package's attached file source (kept for reference/debugging only).
+  return { ...pkg, pageUrl: pageUrl || fileUrl, sourceFileUrl: fileUrl };
 }
 
 async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
@@ -2483,7 +2504,7 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
       btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
       btn.disabled = false;
       toast(`WPDM packages created!\n• ${qPkg.title || qResult.name}\n• ${aPkg.title || aResult.name}`, 'success');
-      initPqListingButton(qUrl, aUrl, 200);
+      initPqListingButton(qPkg.pageUrl, aPkg.pageUrl, 200);
     } catch (err) {
       console.error('[wpdm] failed:', err);
       btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
