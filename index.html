@@ -2325,8 +2325,33 @@ function downloadJSON(){
   a.download=`${fnameBase}_quiz.json`;
   a.click();
   toast('JSON downloaded','success');
+}
+
+// ════════════════════════════════════════════════════════
+//  INITIAL PAINT — make the header pill reflect saved keys
+//  immediately on load/refresh, instead of staying stuck on
+//  "No key active" until Settings is opened for the first time.
+// ════════════════════════════════════════════════════════
+function initActiveKeyBannerOnLoad(){
+  // Re-anchor currentKeyIndex to a real record (if any) before painting,
+  // mirroring the same logic saveKeys() uses, so the pill and the
+  // rotation pointer agree right from page load.
+  const records=loadKeyRecords();
+  if(records.length===0){
+    currentKeyIndex=0;
+  } else if(currentKeyIndex<0||currentKeyIndex>=records.length){
+    currentKeyIndex=0;
   }
-  </script>
+  renderActiveKeyBanner();
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',initActiveKeyBannerOnLoad);
+}else{
+  // DOM is already parsed (script sits at the end of <body>) — run right away
+  initActiveKeyBannerOnLoad();
+}
+
+</script>
 </div>
 </body>
 </html>
