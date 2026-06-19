@@ -811,6 +811,20 @@ let processingStage = 0;    // 0=fresh, 1=extracted, 2=verified
 const GEMINI_MODEL  = 'gemini-2.5-flash';
 
 // ════════════════════════════════════════════════════════
+//  TOAST NOTIFICATIONS
+// ════════════════════════════════════════════════════════
+let toastTimer=null;
+function toast(msg,type){
+  const el=document.getElementById('toast');
+  const msgEl=document.getElementById('toastMsg');
+  if(!el||!msgEl) return;
+  msgEl.textContent=msg;
+  el.className='show'+(type?' '+type:'');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ el.className=''; },3200);
+}
+
+// ════════════════════════════════════════════════════════
 //  API KEY MANAGEMENT — unlimited keys, live usage tracking
 // ════════════════════════════════════════════════════════
 const KEYS_STORAGE   = 'egf_keys_v2';
