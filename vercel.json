@@ -3,6 +3,9 @@
   "functions": {
     "api/get-drive-token.js": {
       "maxDuration": 10
+    },
+    "api/gist-sync.js": {
+      "maxDuration": 10
     }
   }
 }
