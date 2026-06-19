@@ -2408,8 +2408,7 @@ if(document.readyState==='loading'){
 </div>
 <script>
 /* ── WPDM Push + PQ Listing (merged in) ── */
-const WPDM_SITE       = 'https://eduglobalforge.com/pastquestions';
-const WPDM_API_KEY    = '6a343066741d8';
+// WordPress credentials are no longer stored client-side — handled server-side via /api/wp-proxy.js
 const WPDM_CAT_ID     = 419;
 const DRIVE_API_FILES = 'https://www.googleapis.com/drive/v3/files';
 
@@ -2443,16 +2442,17 @@ async function createWpdmPackage({ title, linkLabel, fileUrl, fileName, fileSize
     package_size: formatSize(fileSize), base_price: basePrice,
     files: { "1": fileUrl }, fileinfo: { "1": { title: fileName, url: fileUrl } }
   };
-  const res = await fetch(`${WPDM_SITE}/wp-json/wpdm/v1/packages`, {
+  const res = await fetch('/api/wp-proxy', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${WPDM_API_KEY}` },
-    body: JSON.stringify(body)
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: '/wpdm/v1/packages', method: 'POST', json: body })
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`WPDM package creation failed (${res.status}): ${text.slice(0, 300)}`);
   }
-  return res.json();
+  const result = await res.json();
+  return result.data || result;
 }
 
 async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
@@ -2498,14 +2498,41 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
 </script>
 <script>
 /* ── PQ Listing Publish (inlined) ── */
-const PQL_SITE      = 'https://eduglobalforge.com/pastquestions';
+// WordPress credentials are no longer stored client-side — handled server-side via /api/wp-proxy.js
 const PQL_POST_TYPE = 'uni_pq_download';
-const PQL_WP_USER   = 'testblog';
-const PQL_WP_APP_PW = 'LMLp KZed YYCM QcxF QteI pzMD';
-const PQL_AUTH       = 'Basic ' + btoa(`${PQL_WP_USER}:${PQL_WP_APP_PW}`);
 
 const PQL_TAXONOMIES = ['question-type','semester','session-year','level','faculty','university'];
 const pqlTermCache = {}; // taxonomy -> { lowercaseName: id }
+
+// Helper: call wp-proxy for a GET request (taxonomy term search/list)
+async function wpProxyGet(path) {
+  const res = await fetch('/api/wp-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, method: 'GET' })
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`wp-proxy GET ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  const envelope = await res.json();
+  return envelope.data; // wp-proxy wraps response in { ok: true, data: ... }
+}
+
+// Helper: call wp-proxy for a POST request (create term / create post)
+async function wpProxyPost(path, json) {
+  const res = await fetch('/api/wp-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, method: 'POST', json })
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`wp-proxy POST ${path} failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  const envelope = await res.json();
+  return envelope.data;
+}
 
 async function pqlGetOrCreateTermId(taxonomy, name) {
   let cleanName = (name || '').trim();
@@ -2523,11 +2550,8 @@ async function pqlGetOrCreateTermId(taxonomy, name) {
   // Session Year: if AI returns a bare 4-digit year (e.g. "2021"), fetch all terms
   // and match the one that ENDS with that year (e.g. "2020/2021"), not starts with it.
   if (taxonomy === 'session-year' && /^\d{4}$/.test(cleanName)) {
-    const allYearsRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/session-year?per_page=100`, {
-      headers: { 'Authorization': PQL_AUTH }
-    });
-    if (allYearsRes.ok) {
-      const allYears = await allYearsRes.json();
+    const allYears = await wpProxyGet(`/wp/v2/session-year?per_page=100`);
+    if (Array.isArray(allYears)) {
       // Match term that ends with /YYYY (e.g. "2020/2021" ends with "/2021")
       const matched = allYears.find(t => (t.name || '').trim().endsWith('/' + cleanName));
       if (matched) {
@@ -2552,14 +2576,10 @@ async function pqlGetOrCreateTermId(taxonomy, name) {
   if (pqlTermCache[taxonomy][cacheKey]) return pqlTermCache[taxonomy][cacheKey];
 
   // 1. Search for existing term
-  const searchRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`, {
-    headers: { 'Authorization': PQL_AUTH }
-  });
-  if (!searchRes.ok) {
-    const text = await searchRes.text().catch(() => '');
-    throw new Error(`Term search failed for ${taxonomy} (${searchRes.status}): ${text.slice(0, 200)}`);
+  const matches = await wpProxyGet(`/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`);
+  if (!Array.isArray(matches)) {
+    throw new Error(`Term search for ${taxonomy} returned unexpected data`);
   }
-  const matches = await searchRes.json();
 
   // 1a. Exact match (case-insensitive)
   const exact = matches.find(t => (t.name || '').trim().toLowerCase() === cacheKey);
@@ -2579,16 +2599,7 @@ async function pqlGetOrCreateTermId(taxonomy, name) {
   }
 
   // 2. Create term if no match found
-  const createRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
-    body: JSON.stringify({ name: cleanName })
-  });
-  if (!createRes.ok) {
-    const text = await createRes.text().catch(() => '');
-    throw new Error(`Term creation failed for ${taxonomy} "${cleanName}" (${createRes.status}): ${text.slice(0, 200)}`);
-  }
-  const created = await createRes.json();
+  const created = await wpProxyPost(`/wp/v2/${taxonomy}`, { name: cleanName });
   pqlTermCache[taxonomy][cacheKey] = created.id;
   return created.id;
 }
@@ -2646,16 +2657,8 @@ async function publishPqListing(qUrl, aUrl, basePrice) {
     'university': universityId ? [universityId] : []
   };
 
-  const res = await fetch(`${PQL_SITE}/wp-json/wp/v2/${PQL_POST_TYPE}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`PQ Listing publish failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-  return res.json();
+  const result = await wpProxyPost(`/wp/v2/${PQL_POST_TYPE}`, body);
+  return result;
 }
 
 function initPqListingButton(qUrl, aUrl, basePrice) {
