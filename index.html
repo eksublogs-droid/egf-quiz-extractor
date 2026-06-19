@@ -2163,34 +2163,84 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
 const PQL_SITE      = 'https://eduglobalforge.com/pastquestions';
 const PQL_POST_TYPE = 'uni_pq_download';
 const PQL_WP_USER   = 'testblog';
-const PQL_WP_APP_PW = 'LMLpKZedYYCMQcxFQteIpzMD';
+const PQL_WP_APP_PW = 'LMLp KZed YYCM QcxF QteI pzMD';
 const PQL_AUTH       = 'Basic ' + btoa(`${PQL_WP_USER}:${PQL_WP_APP_PW}`);
 
 const PQL_TAXONOMIES = ['question-type','semester','session-year','level','faculty','university'];
 const pqlTermCache = {}; // taxonomy -> { lowercaseName: id }
 
 async function pqlGetOrCreateTermId(taxonomy, name) {
-  const cleanName = (name || '').trim();
+  let cleanName = (name || '').trim();
   if (!cleanName) return null;
+
+  // ── NORMALIZERS (run before search so we always match existing terms) ──
+
+  // Semester: normalize "First"/"Second"/"1st"/"2nd" variants → "1st Semester" / "2nd Semester"
+  if (taxonomy === 'semester') {
+    const s = cleanName.toLowerCase();
+    if (/\b(1st|first|one|1)\b/.test(s))  cleanName = '1st Semester';
+    else if (/\b(2nd|second|two|2)\b/.test(s)) cleanName = '2nd Semester';
+  }
+
+  // Session Year: if AI returns a bare 4-digit year (e.g. "2021"), fetch all terms
+  // and match the one that ENDS with that year (e.g. "2020/2021"), not starts with it.
+  if (taxonomy === 'session-year' && /^\d{4}$/.test(cleanName)) {
+    const allYearsRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/session-year?per_page=100`, {
+      headers: { 'Authorization': PQL_AUTH }
+    });
+    if (allYearsRes.ok) {
+      const allYears = await allYearsRes.json();
+      // Match term that ends with /YYYY (e.g. "2020/2021" ends with "/2021")
+      const matched = allYears.find(t => (t.name || '').trim().endsWith('/' + cleanName));
+      if (matched) {
+        if (!pqlTermCache[taxonomy]) pqlTermCache[taxonomy] = {};
+        pqlTermCache[taxonomy][cleanName.toLowerCase()] = matched.id;
+        return matched.id;
+      }
+    }
+    // If no match found, fall through and let it create the term as-is
+  }
+
+  // Question Type: normalize "Practical" spelling to match existing "Pratical" typo in WordPress
+  if (taxonomy === 'question-type') {
+    const s = cleanName.toLowerCase();
+    if (s === 'practical' || s === 'practicals') cleanName = 'Pratical';
+  }
+
+  // ── END NORMALIZERS ──
 
   if (!pqlTermCache[taxonomy]) pqlTermCache[taxonomy] = {};
   const cacheKey = cleanName.toLowerCase();
   if (pqlTermCache[taxonomy][cacheKey]) return pqlTermCache[taxonomy][cacheKey];
 
-  // 1. Search for existing term (no auth — public endpoint; auth causes 500 on this host)
-  const searchRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`);
+  // 1. Search for existing term
+  const searchRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`, {
+    headers: { 'Authorization': PQL_AUTH }
+  });
   if (!searchRes.ok) {
     const text = await searchRes.text().catch(() => '');
     throw new Error(`Term search failed for ${taxonomy} (${searchRes.status}): ${text.slice(0, 200)}`);
   }
   const matches = await searchRes.json();
+
+  // 1a. Exact match (case-insensitive)
   const exact = matches.find(t => (t.name || '').trim().toLowerCase() === cacheKey);
   if (exact) {
     pqlTermCache[taxonomy][cacheKey] = exact.id;
     return exact.id;
   }
 
-  // 2. Create term if no exact match
+  // 1b. Fuzzy match (case-insensitive): existing term contains AI value, or AI value contains existing term
+  const fuzzy = matches.find(t => {
+    const existingLower = (t.name || '').trim().toLowerCase();
+    return existingLower.includes(cacheKey) || cacheKey.includes(existingLower);
+  });
+  if (fuzzy) {
+    pqlTermCache[taxonomy][cacheKey] = fuzzy.id;
+    return fuzzy.id;
+  }
+
+  // 2. Create term if no match found
   const createRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
@@ -2302,9 +2352,4 @@ function initPqListingButton(qUrl, aUrl, basePrice) {
     }
   };
   container.appendChild(btn);
-  console.log('[pql] Button injected into', container.id);
-}
-</script>
-<script src="drive-push.js"></script>
-</body>
-</html>
+  c
