@@ -984,11 +984,18 @@ async function decryptPayload(blob, passphrase){
 }
 
 async function gistSyncCall(payload){
-  const res = await fetch('/api/gist-sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  let res;
+  try{
+    res = await fetch('/api/gist-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  }catch(networkErr){
+    // fetch() itself threw — this is a connectivity/CORS/server-down issue,
+    // never a wrong-passphrase issue (we haven't even gotten a response yet).
+    throw new Error('Could not reach the sync server — check your internet connection and try again.');
+  }
   const data = await res.json().catch(()=> ({}));
   if(!res.ok) throw new Error(data.error || `Sync request failed (${res.status})`);
   return data;
@@ -1025,9 +1032,18 @@ async function retrieveKeysFromPassphrase(){
   const btn=document.getElementById('retrieveKeysBtn');
   if(btn) btn.disabled=true;
   setTokenStatus('Retrieving synced keys...','');
+  let gistId, blob;
   try{
-    const gistId=await findOrCreateSyncGist();
-    const blob=await fetchSyncBlob(gistId);
+    gistId=await findOrCreateSyncGist();
+    blob=await fetchSyncBlob(gistId);
+  }catch(networkErr){
+    // Failure here is connectivity/server-side — never a passphrase issue,
+    // since we haven't attempted to decrypt anything yet.
+    setTokenStatus('Retrieve failed: '+networkErr.message,'error');
+    if(btn) btn.disabled=false;
+    return;
+  }
+  try{
     if(!blob){
       setTokenStatus('No synced data found for this passphrase yet.','error');
       return;
@@ -1047,8 +1063,10 @@ async function retrieveKeysFromPassphrase(){
     renderActiveKeyBanner();
     setTokenStatus('Retrieved — this passphrase will pull everything on any browser.','connected');
     toast(`${merged.length} key${merged.length===1?'':'s'} retrieved`,'success');
-  }catch(e){
-    setTokenStatus('Retrieve failed: '+e.message+' (wrong passphrase?)','error');
+  }catch(decryptErr){
+    // Failure here means we got data back but couldn't decrypt it —
+    // this IS the actual "wrong passphrase" case.
+    setTokenStatus('Retrieve failed: wrong passphrase (could not decrypt synced data).','error');
   }finally{
     if(btn) btn.disabled=false;
   }
@@ -1183,9 +1201,15 @@ async function openSettings(){
   const passphrase=getPassphrase();
   if(passphrase){
     setTokenStatus('Fetching synced data...','');
+    let gistId, blob;
     try{
-      const gistId=await findOrCreateSyncGist();
-      const blob=await fetchSyncBlob(gistId);
+      gistId=await findOrCreateSyncGist();
+      blob=await fetchSyncBlob(gistId);
+    }catch(networkErr){
+      setTokenStatus('Sync failed: '+networkErr.message+' (using locally saved data)','error');
+      return;
+    }
+    try{
       if(blob){
         const payload=await decryptPayload(blob, passphrase);
         const merged=applySyncPayload(payload, loadKeyRecords());
@@ -1199,8 +1223,8 @@ async function openSettings(){
         }
       }
       setTokenStatus('Synced — this passphrase will pull everything on any browser.','connected');
-    }catch(e){
-      setTokenStatus('Sync failed: '+e.message+' (using locally saved data — wrong passphrase?)','error');
+    }catch(decryptErr){
+      setTokenStatus('Sync failed: wrong passphrase (using locally saved data)','error');
     }
   }else{
     setTokenStatus('No passphrase set — nothing leaves this device.','');
@@ -2355,3 +2379,4 @@ if(document.readyState==='loading'){
 </div>
 </body>
 </html>
+
