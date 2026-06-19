@@ -1138,6 +1138,21 @@ function saveKeys(){
   (async()=>{
     try{
       const gistId=await findOrCreateSyncGist();
+
+      // Safety check: never push an empty local key list over a gist that
+      // might still hold real keys (e.g. this is a fresh/empty browser that
+      // hasn't pulled yet). Only an explicit, intentional "clear sync" should
+      // wipe synced data — accidental empty saves should not.
+      if(cleaned.length===0){
+        const existingBlob=await fetchSyncBlob(gistId).catch(()=>null);
+        if(existingBlob){
+          setTokenStatus('Not synced: remote already has keys saved under this passphrase — use Retrieve Keys instead of Save to avoid erasing them.','error');
+          closeSettings();
+          toast('Local list is empty — use Retrieve Keys first, not Save, to avoid wiping synced data','error');
+          return;
+        }
+      }
+
       const blob=await encryptPayload(buildSyncPayload(cleaned), passphrase);
       await pushSyncBlob(gistId, blob);
       setTokenStatus('Synced — this passphrase will pull everything on any browser.','connected');
