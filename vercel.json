@@ -6,6 +6,9 @@
     },
     "api/gist-sync.js": {
       "maxDuration": 10
+    },
+    "api/wp-proxy.js": {
+      "maxDuration": 30
     }
   }
 }
