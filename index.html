@@ -1401,7 +1401,7 @@ Rules:
 - Questions with fewer than 4 options: include only what exists
 - YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
-      const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
+      const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.',0,0%getKeys().length);
 
       setProgress(30,'Parsing extraction results...');
       let extracted;
@@ -1474,8 +1474,8 @@ ${questionsForVerification}`;
       const keys=getKeys();
       const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
       const [pass1Text,pass2Text]=await Promise.all([
-        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash'),
-        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash')
+        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,1%keys.length,0,'gemini-2.5-flash'),
+        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,2%keys.length,0,'gemini-2.5-flash')
       ]);
 
       setProgress(70,'Resolving conflicts...');
@@ -1486,7 +1486,7 @@ ${questionsForVerification}`;
         if(!Array.isArray(pass1)) throw new Error('Not an array');
       }catch(e){
         try{
-          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash');
+          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,1%keys.length,0,'gemini-2.5-flash');
           pass1=extractJSON(retryText);
           if(!Array.isArray(pass1)) throw new Error('Not an array');
         }catch(e2){
@@ -1500,7 +1500,7 @@ ${questionsForVerification}`;
         if(!Array.isArray(pass2)) throw new Error('Not an array');
       }catch(e){
         try{
-          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash');
+          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,2%keys.length,0,'gemini-2.5-flash');
           pass2=extractJSON(retryText);
           if(!Array.isArray(pass2)) throw new Error('Not an array');
         }catch(e2){
@@ -1536,7 +1536,7 @@ ${conflictQuestionsText}`;
 
         setProgress(78,`Resolving ${conflicts.length} conflict(s)...`);
         try{
-          const tiebreakText=await geminiCall([{text:bulkTiebreakPrompt}],'You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ and end with ].',0,currentKeyIndex%getKeys().length,0,'gemini-2.5-flash');
+          const tiebreakText=await geminiCall([{text:bulkTiebreakPrompt}],'You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ and end with ].',0,3%getKeys().length,0,'gemini-2.5-flash');
           const resolved=extractJSON(tiebreakText);
           const resolvedArr=Array.isArray(resolved)?resolved:[resolved];
           resolvedArr.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
@@ -2340,4 +2340,6 @@ async function pqlGetOrCreateTermId(taxonomy, name) {
     const existingLower = (t.name || '').trim().toLowerCase();
     return existingLower.includes(cacheKey) || cacheKey.includes(existingLower);
   });
-  if (fuz
+  if (fuzzy) {
+    pqlTermCache[taxonomy][cacheKey] = fuzzy.id;
+  
