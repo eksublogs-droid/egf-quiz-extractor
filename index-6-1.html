@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>EduGlobalForge — Quiz Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  /* ── TOKENS ─────────────────────────────────────────── */
+  :root{
+    --navy:       #0A0F1E;
+    --navy-mid:   #0F1729;
+    --navy-card:  #131D35;
+    --navy-hover: #1A2540;
+    --blue:       #2D7EFF;
+    --blue-bright:#4B9FFF;
+    --blue-glow:  rgba(45,126,255,.18);
+    --blue-line:  rgba(45,126,255,.35);
+    --cyan:       #00D4FF;
+    --gold:       #F5C842;
+    --white:      #F0F4FF;
+    --white-dim:  #8A99BB;
+    --white-faint:#3A4A6A;
+    --green:      #22C55E;
+    --red:        #EF4444;
+    --radius:     14px;
+    --radius-sm:  8px;
+    --font-main:  'Space Grotesk', sans-serif;
+    --font-mono:  'Space Mono', monospace;
+    --font-body:  'Inter', sans-serif;
+    --transition: .22s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* ── RESET ──────────────────────────────────────────── */
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--navy);
+    color:var(--white);
+    font-family:var(--font-body);
+    font-size:16px;
+    line-height:1.6;
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+
+  /* ── BACKGROUND GRID ────────────────────────────────── */
+  body::before{
+    content:'';
+    position:fixed;inset:0;
+    background-image:
+      linear-gradient(rgba(45,126,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45,126,255,.04) 1px, transparent 1px);
+    background-size:48px 48px;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────── */
+  #app{position:relative;z-index:1;width:100%;max-width:1400px;margin:0 auto;padding:0 32px 80px}
+  @media(max-width:768px){#app{padding:0 16px 60px}}
+  @media(min-width:1400px){#app{max-width:1600px;padding:0 48px 80px}}
+
+  /* ── HEADER ─────────────────────────────────────────── */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:28px 0 36px;
+    border-bottom:1px solid var(--blue-line);
+    margin-bottom:40px;
+  }
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo-icon{
+    width:42px;height:42px;
+    background:linear-gradient(135deg,var(--blue),var(--cyan));
+    border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-mono);font-size:16px;font-weight:700;color:#fff;
+    letter-spacing:-1px;
+    box-shadow:0 0 20px var(--blue-glow);
+  }
+  .logo-text h1{font-family:var(--font-main);font-size:18px;font-weight:700;color:var(--white);letter-spacing:-.3px}
+  .logo-text p{font-size:12px;color:var(--white-dim);font-family:var(--font-mono)}
+  #settingsBtn{
+    background:var(--navy-card);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:var(--radius-sm);
+    padding:9px 16px;cursor:pointer;font-size:13px;font-family:var(--font-main);
+    display:flex;align-items:center;gap:7px;transition:var(--transition);
+  }
+  #settingsBtn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-glow)}
+
+  .header-key-pill{
+    display:flex;align-items:center;gap:7px;cursor:pointer;
+    background:var(--navy-card);border:1px solid var(--white-faint);
+    border-radius:999px;padding:7px 14px;
+    font-family:var(--font-mono);font-size:12px;color:var(--white-dim);
+    transition:var(--transition);white-space:nowrap;flex-shrink:0;
+  }
+  .header-key-pill span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .header-key-pill:hover{border-color:var(--blue);color:var(--white)}
+  .header-key-dot{width:7px;height:7px;border-radius:50%;background:var(--white-faint);flex-shrink:0}
+  .header-key-pill.ok .header-key-dot{background:var(--green);animation:pulse 2s infinite}
+  .header-key-pill.warn .header-key-dot{background:var(--gold);animation:pulse 2s infinite}
+  .header-key-pill.crit .header-key-dot{background:var(--red);animation:pulse 2s infinite}
+
+  /* ── HERO ───────────────────────────────────────────── */
+  .hero{text-align:center;margin-bottom:44px;padding:0 10px}
+  .hero-eyebrow{
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--blue-glow);border:1px solid var(--blue-line);
+    border-radius:999px;padding:5px 14px;
+    font-size:11px;font-family:var(--font-mono);color:var(--blue-bright);
+    letter-spacing:.08em;text-transform:uppercase;margin-bottom:18px;
+  }
+  .hero-eyebrow span{width:6px;height:6px;background:var(--cyan);border-radius:50%;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+  .hero h2{font-family:var(--font-main);font-size:clamp(26px,5vw,40px);font-weight:700;line-height:1.15;letter-spacing:-.5px;margin-bottom:12px}
+  .hero h2 em{font-style:normal;color:var(--blue-bright)}
+  .hero p{color:var(--white-dim);font-size:15px;max-width:520px;margin:0 auto}
+
+  /* ── CARD ───────────────────────────────────────────── */
+  .card{
+    background:var(--navy-card);
+    border:1px solid var(--white-faint);
+    border-radius:var(--radius);
+    padding:28px;
+    margin-bottom:20px;
+  }
+  .card-title{
+    font-family:var(--font-main);font-size:13px;font-weight:600;
+    color:var(--blue-bright);letter-spacing:.06em;text-transform:uppercase;
+    margin-bottom:18px;display:flex;align-items:center;gap:8px;
+  }
+  .card-title svg{flex-shrink:0}
+
+  /* ── UPLOAD ZONE ────────────────────────────────────── */
+  #dropZone{
+    border:2px dashed var(--white-faint);border-radius:var(--radius);
+    padding:48px 28px;text-align:center;cursor:pointer;
+    transition:var(--transition);background:var(--navy);
+    position:relative;
+  }
+  #dropZone.dragover{border-color:var(--blue);background:var(--blue-glow)}
+  #dropZone:hover{border-color:var(--blue-bright);background:rgba(45,126,255,.06)}
+  #dropZone svg{margin:0 auto 14px;display:block;color:var(--blue)}
+  #dropZone h3{font-family:var(--font-main);font-size:17px;font-weight:600;margin-bottom:6px}
+  #dropZone p{color:var(--white-dim);font-size:13px}
+  #dropZone .browse-link{color:var(--blue-bright);text-decoration:underline;cursor:pointer}
+  #fileInput{display:none}
+
+  /* ── THUMBNAILS ─────────────────────────────────────── */
+  #thumbGrid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));
+    gap:10px;margin-top:18px;
+  }
+  .thumb{
+    position:relative;border-radius:var(--radius-sm);overflow:hidden;
+    aspect-ratio:3/4;background:var(--navy-hover);
+    border:1px solid var(--white-faint);
+  }
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb-remove{
+    position:absolute;top:4px;right:4px;
+    background:rgba(0,0,0,.7);border:none;border-radius:50%;
+    width:22px;height:22px;cursor:pointer;color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:12px;
+    transition:var(--transition);
+  }
+  .thumb-remove:hover{background:var(--red)}
+  .thumb-num{
+    position:absolute;bottom:0;left:0;right:0;
+    background:linear-gradient(transparent,rgba(0,0,0,.7));
+    padding:6px 4px 4px;font-size:10px;color:var(--white-dim);
+    font-family:var(--font-mono);text-align:center;
+  }
+
+  /* ── EDITABLE FIELDS ────────────────────────────────── */
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  @media(max-width:560px){.field-row{grid-template-columns:1fr}}
+  .field-group{display:flex;flex-direction:column;gap:6px}
+  .field-group label{font-size:12px;color:var(--white-dim);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase}
+  .field-group input,.field-group select{
+    background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:10px 14px;
+    color:var(--white);font-family:var(--font-body);font-size:14px;
+    transition:var(--transition);outline:none;
+  }
+  .field-group input:focus,.field-group select:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+
+  /* ── BUTTONS ────────────────────────────────────────── */
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    border:none;border-radius:var(--radius-sm);
+    padding:11px 22px;font-size:14px;font-family:var(--font-main);
+    font-weight:600;cursor:pointer;transition:var(--transition);
+    text-decoration:none;white-space:nowrap;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--blue),var(--blue-bright));
+    color:#fff;box-shadow:0 4px 20px rgba(45,126,255,.3);
+  }
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(45,126,255,.45)}
+  .btn-primary:disabled{opacity:.45;cursor:not-allowed;transform:none}
+  .btn-secondary{
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);
+  }
+  .btn-secondary:hover{border-color:var(--blue);color:var(--blue)}
+  .btn-success{background:linear-gradient(135deg,#16a34a,var(--green));color:#fff}
+  .btn-success:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(34,197,94,.3)}
+  .btn-sm{padding:7px 14px;font-size:12px}
+  .btn-full{width:100%;justify-content:center}
+
+  /* ── PROGRESS ───────────────────────────────────────── */
+  #progressWrap{display:none;margin-top:20px}
+  .progress-label{font-size:13px;color:var(--white-dim);margin-bottom:8px;font-family:var(--font-mono)}
+  .progress-bar-bg{height:6px;background:var(--white-faint);border-radius:999px;overflow:hidden}
+  .progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:999px;transition:width .4s ease;width:0%}
+  .progress-steps{margin-top:12px;display:flex;flex-direction:column;gap:5px}
+  .step-item{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--white-faint);font-family:var(--font-mono);transition:color .3s}
+  .step-item.active{color:var(--blue-bright)}
+  .step-item.done{color:var(--green)}
+  .step-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+
+  /* ── OUTPUT SECTIONS ────────────────────────────────── */
+  #outputArea{display:none}
+  .section-header{
+    display:flex;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;gap:12px;
+    padding:20px 28px;
+    background:linear-gradient(90deg,var(--navy-hover),var(--navy-card));
+    border-radius:var(--radius) var(--radius) 0 0;
+    border:1px solid var(--white-faint);
+    border-bottom:none;
+  }
+  .section-badge{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  }
+  .badge-num{
+    width:24px;height:24px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:11px;color:#fff;flex-shrink:0;
+  }
+  .s1 .badge-num{background:var(--blue)}
+  .s2 .badge-num{background:var(--cyan);color:var(--navy)}
+  .s3 .badge-num{background:var(--gold);color:var(--navy)}
+  .section-title{font-family:var(--font-main);font-size:16px;font-weight:600}
+  .section-body{
+    border:1px solid var(--white-faint);border-top:none;
+    border-radius:0 0 var(--radius) var(--radius);
+    padding:24px 28px;background:var(--navy-card);
+    margin-bottom:24px;
+  }
+
+  /* ── QUESTION LIST ──────────────────────────────────── */
+  .q-list{list-style:none}
+  .q-item{
+    padding:14px 0;
+    border-bottom:1px solid var(--white-faint);
+    display:flex;gap:12px;
+  }
+  .q-item:last-child{border-bottom:none;padding-bottom:0}
+  .q-num{
+    font-family:var(--font-mono);font-size:12px;color:var(--blue-bright);
+    flex-shrink:0;width:28px;padding-top:1px;
+  }
+  .q-content{flex:1}
+  .q-text{font-size:18px;color:var(--white);line-height:1.65;margin-bottom:12px;font-weight:500}
+  .q-options{display:flex;flex-direction:column;gap:8px}
+  .q-opt{font-size:16px;color:var(--white-dim);display:flex;gap:9px;line-height:1.55}
+  .q-opt .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0}
+  .q-opt.correct-opt .opt-label{color:var(--green)}
+  .q-opt.correct-opt .opt-text{color:var(--white);font-weight:500}
+  .correct-tag{
+    display:inline-flex;align-items:center;gap:4px;
+    background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.25);
+    color:var(--green);border-radius:999px;padding:2px 10px;
+    font-size:11px;font-family:var(--font-mono);margin-top:6px;
+  }
+  .explanation-box{
+    background:rgba(45,126,255,.06);border:1px solid var(--blue-line);
+    border-radius:var(--radius-sm);padding:12px 14px;margin-top:10px;
+  }
+  .explanation-box .exp-label{
+    font-size:10px;font-family:var(--font-mono);color:var(--blue-bright);
+    letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;
+  }
+  .explanation-box p{font-size:14.5px;color:var(--white-dim);line-height:1.6}
+
+  /* ── JSON SECTION ───────────────────────────────────── */
+  #jsonOutput{
+    background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:16px;
+    font-family:var(--font-mono);font-size:13.5px;color:var(--white-dim);
+    max-height:360px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;
+    line-height:1.6;
+  }
+  #jsonOutput::-webkit-scrollbar{width:5px}
+  #jsonOutput::-webkit-scrollbar-track{background:var(--navy)}
+  #jsonOutput::-webkit-scrollbar-thumb{background:var(--white-faint);border-radius:999px}
+
+  /* ── ACTIONS ROW ────────────────────────────────────── */
+  .actions-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+
+  /* ── SETTINGS MODAL ─────────────────────────────────── */
+  .modal-overlay{
+    display:none;position:fixed;inset:0;
+    background:rgba(0,0,0,.75);backdrop-filter:blur(4px);
+    z-index:1000;align-items:center;justify-content:center;padding:20px;
+  }
+  .modal-overlay.open{display:flex}
+  .modal{
+    background:var(--navy-card);border:1px solid var(--blue-line);
+    border-radius:var(--radius);width:100%;max-width:500px;
+    padding:32px;position:relative;
+  }
+  .modal h2{font-family:var(--font-main);font-size:18px;font-weight:700;margin-bottom:6px}
+  .modal .sub{color:var(--white-dim);font-size:13px;margin-bottom:24px}
+  .modal-close{
+    position:absolute;top:16px;right:16px;
+    background:none;border:none;color:var(--white-dim);
+    cursor:pointer;font-size:20px;transition:var(--transition);
+  }
+  .modal-close:hover{color:var(--white)}
+  .modal-wide{max-width:560px;max-height:88vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  /* ── SETTINGS SUB-SECTIONS (GitHub sync + WP) ── */
+  .settings-section{margin-bottom:22px;padding-top:18px;border-top:1px solid var(--white-faint)}
+  .settings-section-title{
+    font-family:var(--font-mono);font-size:11px;color:var(--blue-bright);
+    text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;
+    display:flex;align-items:center;gap:7px;
+  }
+  .token-row{display:flex;gap:8px;align-items:stretch}
+  .token-row .input-with-eye{flex:1}
+  .token-status-line{
+    margin-top:8px;font-size:11px;font-family:var(--font-mono);
+    color:var(--white-dim);display:flex;align-items:center;gap:6px;
+  }
+  .token-status-line.connected{color:var(--green)}
+  .token-status-line.error{color:var(--red)}
+  .token-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+  .input-with-eye{position:relative;display:flex;align-items:center}
+  .input-with-eye input{
+    padding-right:38px;width:100%;
+    background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding-top:10px;padding-bottom:10px;padding-left:14px;
+    color:var(--white);font-family:var(--font-body);font-size:14px;
+    transition:var(--transition);outline:none;
+  }
+  .input-with-eye input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .eye-toggle{
+    position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:var(--white-dim);cursor:pointer;
+    padding:5px;display:flex;align-items:center;border-radius:5px;
+    transition:var(--transition);
+  }
+  .eye-toggle:hover{color:var(--blue-bright);background:var(--blue-glow)}
+  body.modal-open{overflow:hidden;position:fixed;width:100%}
+
+  /* ── ACTIVE KEY BANNER ──────────────────────────────── */
+  .active-key-banner{
+    display:flex;align-items:center;gap:10px;
+    background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+    border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:20px;
+  }
+  .active-key-title{font-family:var(--font-main);font-size:13.5px;font-weight:600;color:var(--white)}
+  .active-key-sub{font-family:var(--font-mono);font-size:11.5px;color:var(--white-dim);margin-top:2px}
+
+  /* ── DYNAMIC KEY ROW ────────────────────────────────── */
+  .key-row{
+    border:1px solid var(--white-faint);border-radius:var(--radius-sm);
+    padding:14px;margin-bottom:12px;background:var(--navy);
+    transition:var(--transition);
+  }
+  .key-row.is-active{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .key-row-top input[type="text"]{
+    flex:0 0 110px;background:transparent;border:none;
+    color:var(--white-dim);font-family:var(--font-mono);font-size:11px;
+    text-transform:uppercase;letter-spacing:.05em;padding:2px 4px;outline:none;
+  }
+  .key-row-top input[type="text"]:focus{color:var(--white)}
+  .key-row-active-pill{
+    font-size:10px;font-family:var(--font-mono);font-weight:700;
+    background:rgba(34,197,94,.18);color:var(--green);
+    border-radius:999px;padding:2px 9px;flex-shrink:0;display:none;
+  }
+  .key-row.is-active .key-row-active-pill{display:inline-block}
+  .key-row-remove{
+    background:none;border:none;color:var(--white-faint);cursor:pointer;
+    font-size:15px;margin-left:auto;flex-shrink:0;transition:var(--transition);
+  }
+  .key-row-remove:hover{color:var(--red)}
+  .key-row input[type="password"],.key-row input[type="text"].key-row-key-input{
+    width:100%;background:var(--navy-hover);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:9px 38px 9px 14px;
+    color:var(--white);font-family:var(--font-mono);font-size:13px;
+    transition:var(--transition);outline:none;
+  }
+  .key-row input[type="password"]:focus,.key-row input[type="text"].key-row-key-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row-key-wrap{position:relative;margin-bottom:8px}
+  .key-row-eye{
+    position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:var(--white-dim);cursor:pointer;
+    padding:5px;display:flex;align-items:center;border-radius:5px;
+    transition:var(--transition);
+  }
+  .key-row-eye:hover{color:var(--blue-bright);background:var(--blue-glow)}
+  .key-row-usage{display:flex;align-items:center;gap:9px}
+  .key-row-usage-track{
+    flex:1;height:6px;border-radius:999px;background:var(--white-faint);
+    overflow:hidden;
+  }
+  .key-row-usage-fill{height:100%;border-radius:999px;background:var(--green);transition:width .3s ease,background .3s ease}
+  .key-row-usage-label{font-family:var(--font-mono);font-size:11px;color:var(--white-dim);flex-shrink:0;white-space:nowrap}
+
+  .quota-row{margin-top:16px}
+  .quota-row label{display:block;font-size:12px;color:var(--white-dim);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .quota-row input{
+    width:140px;background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:9px 14px;
+    color:var(--white);font-family:var(--font-mono);font-size:13px;outline:none;
+  }
+  .quota-row input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .quota-note{font-size:11.5px;color:var(--white-faint);line-height:1.5;margin-top:8px}
+
+  .btn-block{width:100%;justify-content:center}
+  .key-status{
+    margin-top:12px;padding:10px 14px;border-radius:var(--radius-sm);
+    background:var(--navy);border:1px solid var(--white-faint);
+    font-size:12px;font-family:var(--font-mono);color:var(--white-dim);
+    display:flex;align-items:center;gap:7px;
+  }
+  .key-indicator{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 2s infinite}
+
+  /* ── TOAST ──────────────────────────────────────────── */
+  #toast{
+    position:fixed;bottom:28px;right:28px;z-index:2000;
+    background:var(--navy-card);border:1px solid var(--blue-line);
+    border-radius:var(--radius-sm);padding:12px 18px;
+    font-size:13px;font-family:var(--font-main);color:var(--white);
+    display:flex;align-items:center;gap:9px;
+    transform:translateY(80px);opacity:0;transition:.3s ease;
+    max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.4);
+  }
+  #toast.show{transform:translateY(0);opacity:1}
+  #toast.success .t-dot{background:var(--green)}
+  #toast.error .t-dot{background:var(--red)}
+  #toast.info .t-dot{background:var(--blue)}
+  .t-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+  /* ── DIVIDER ────────────────────────────────────────── */
+  .divider{height:1px;background:var(--white-faint);margin:32px 0}
+
+  /* ── JUMP NAV ───────────────────────────────────────── */
+  .jump-nav{
+    position:sticky;top:0;z-index:50;
+    display:flex;gap:8px;flex-wrap:wrap;
+    background:rgba(10,15,30,.92);backdrop-filter:blur(8px);
+    border:1px solid var(--white-faint);border-radius:var(--radius-sm);
+    padding:10px 12px;margin-bottom:20px;
+  }
+  .jump-btn.active-tab{
+    border-color:var(--blue);color:var(--white);background:var(--blue-glow);
+  }
+  .jump-btn{
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:999px;
+    padding:7px 14px;font-size:12.5px;font-family:var(--font-main);font-weight:600;
+    cursor:pointer;transition:var(--transition);white-space:nowrap;
+  }
+  .jump-btn:hover{border-color:var(--blue);color:var(--white);background:var(--blue-glow)}
+  .jump-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .s1dot{background:var(--blue)}
+  .s2dot{background:var(--cyan)}
+  .s3dot{background:var(--gold)}
+  @media(max-width:600px){
+    .jump-nav{gap:6px;padding:8px}
+    .jump-btn{padding:6px 11px;font-size:11.5px}
+  }
+
+  /* ── PAGINATION ─────────────────────────────────────── */
+  .pager{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    flex-wrap:wrap;margin-top:20px;padding-top:18px;
+    border-top:1px solid var(--white-faint);
+  }
+  .pager:empty{display:none}
+  .pager-btn{
+    min-width:34px;height:34px;padding:0 10px;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:var(--radius-sm);
+    font-family:var(--font-mono);font-size:13px;font-weight:600;
+    cursor:pointer;transition:var(--transition);
+  }
+  .pager-btn:hover:not(:disabled){border-color:var(--blue);color:var(--white)}
+  .pager-btn:disabled{opacity:.35;cursor:not-allowed}
+  .pager-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .pager-arrow{font-size:15px}
+
+  /* ── EMPTY STATE ────────────────────────────────────── */
+  .empty-info{
+    text-align:center;padding:32px;
+    color:var(--white-faint);font-family:var(--font-mono);font-size:12px;
+  }
+
+  /* ── KEY ROTATION STATUS ────────────────────────────── */
+  #keyStatusBar{
+    display:none;
+    background:rgba(245,200,66,.08);border:1px solid rgba(245,200,66,.2);
+    border-radius:var(--radius-sm);padding:8px 14px;margin-bottom:16px;
+    font-size:12px;color:var(--gold);font-family:var(--font-mono);
+    align-items:center;gap:8px;
+  }
+
+  /* ── SCROLLBAR GLOBAL ───────────────────────────────── */
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:var(--navy)}
+  ::-webkit-scrollbar-thumb{background:var(--white-faint);border-radius:999px}
+
+  /* ── RESPONSIVE ─────────────────────────────────────── */
+  @media(max-width:600px){
+    .section-header{padding:16px 18px}
+    .section-body{padding:16px 18px}
+    .card{padding:18px}
+    header{padding:18px 0 24px;flex-wrap:wrap;gap:14px}
+    header>div:last-child{width:100%;justify-content:space-between}
+    .header-key-pill{font-size:11.5px;padding:7px 12px;flex:1;justify-content:center}
+    .hero h2{font-size:24px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">EG</div>
+      <div class="logo-text">
+        <h1>EduGlobalForge</h1>
+        <p>Quiz Extractor · AI-Powered</p>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="headerKeyPill" class="header-key-pill" onclick="openSettings()" title="Click to manage API keys">
+        <span class="header-key-dot"></span>
+        <span id="headerKeyPillText">No key active</span>
+      </div>
+      <button id="settingsBtn" onclick="openSettings()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        API Keys
+      </button>
+    </div>
+  </header>
+
+  <!-- ── HERO ── -->
+  <div class="hero">
+    <div class="hero-eyebrow"><span></span>Gemini AI · Double Verification · Instant PDF</div>
+    <h2>Upload exam images.<br/>Get <em>perfect</em> questions, answers & JSON.</h2>
+    <p>Upload one or many images. AI extracts every question, verifies every answer twice, and exports clean PDFs + quiz JSON ready for EduGlobalForge.</p>
+  </div>
+
+  <!-- ── UPLOAD CARD ── -->
+  <div class="card">
+    <div class="card-title">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Upload Exam Images
+    </div>
+    <div id="dropZone" onclick="document.getElementById('fileInput').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      <h3>Drop images here</h3>
+      <p>or <span class="browse-link">browse your files</span> — JPG, PNG, WEBP · Unlimited images</p>
+    </div>
+    <input type="file" id="fileInput" multiple accept="image/*" onchange="handleFiles(this.files)"/>
+    <div id="thumbGrid"></div>
+
+    <div style="margin-top:20px;display:none" id="metaFields">
+      <div class="field-row">
+        <div class="field-group">
+          <label>University Name</label>
+          <input type="text" id="courseUniversity" placeholder="Will be filled by AI..." disabled/>
+        </div>
+        <div class="field-group">
+          <label>Faculty</label>
+          <input type="text" id="courseFaculty" placeholder="Will be filled by AI..." disabled/>
+        </div>
+        <div class="field-group">
+          <label>Department</label>
+          <input type="text" id="courseDepartment" placeholder="Will be filled by AI..." disabled/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label>Course Name / Title</label>
+          <input type="text" id="courseTitle" placeholder="Will be filled by AI..." disabled/>
+        </div>
+        <div class="field-group">
+          <label>Semester</label>
+          <input type="text" id="courseSemester" placeholder="Will be filled by AI..." disabled/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label>Course Code</label>
+          <input type="text" id="courseCode" placeholder="Will be filled by AI..." disabled/>
+        </div>
+        <div class="field-group">
+          <label>Year / Session</label>
+          <input type="text" id="courseYear" placeholder="Will be filled by AI..." disabled/>
+        </div>
+      </div>
+    </div>
+
+    <div id="progressWrap">
+      <div class="progress-label" id="progressLabel">Processing...</div>
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-steps">
+        <div class="step-item" id="step1"><div class="step-dot"></div>Extracting questions &amp; course info</div>
+        <div class="step-item" id="step2"><div class="step-dot"></div>Verifying answers — Pass 1 &amp; 2 (parallel)</div>
+        <div class="step-item" id="step3"><div class="step-dot"></div>Resolving any conflicts (tiebreaker)</div>
+        <div class="step-item" id="step4"><div class="step-dot"></div>Generating outputs</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap" id="actionBtns">
+      <button class="btn btn-primary" id="processBtn" onclick="startProcessing()" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Extract & Analyse
+      </button>
+      <button class="btn btn-secondary" id="resetBtn" onclick="resetAll()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+        Reset
+      </button>
+    </div>
+  </div>
+
+  <!-- ── OUTPUT ── -->
+  <div id="outputArea" style="display:none">
+    <div class="divider"></div>
+
+    <!-- JUMP NAV / TAB BAR -->
+    <div id="jumpNav" class="jump-nav">
+      <button class="jump-btn active-tab" id="tabBtn_sectionQuestions" onclick="showTab('sectionQuestions')">
+        <span class="jump-dot s1dot"></span> Questions Only
+      </button>
+      <button class="jump-btn" id="tabBtn_sectionAnswers" onclick="showTab('sectionAnswers')">
+        <span class="jump-dot s2dot"></span> Answers + Explanations
+      </button>
+      <button class="jump-btn" id="tabBtn_sectionJSON" onclick="showTab('sectionJSON')">
+        <span class="jump-dot s3dot"></span> JSON Export
+      </button>
+      <button class="jump-btn" id="pushDriveBtn" onclick="pushToDrive()">
+        <span class="jump-dot" style="background:#34D399"></span> Push to Drive
+      </button>
+    </div>
+
+    <!-- SECTION 1: Questions Only -->
+    <div id="sectionQuestions">
+    <div class="section-header s1">
+      <div>
+        <div class="section-badge"><div class="badge-num">1</div> Questions Only</div>
+        <div class="section-title" style="margin-top:4px">Clean question list — no answers visible</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="downloadPDF('questions')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download PDF
+      </button>
+    </div>
+    <div class="section-body">
+      <ul class="q-list" id="qListOnly"></ul>
+      <div class="pager" id="pagerOnly"></div>
+    </div>
+    </div>
+
+    <!-- SECTION 2: Questions + Answers + Explanations -->
+    <div id="sectionAnswers">
+    <div class="section-header s2">
+      <div>
+        <div class="section-badge"><div class="badge-num">2</div> Questions + Answers + Explanations</div>
+        <div class="section-title" style="margin-top:4px">Verified answers with academic explanations</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="downloadPDF('answers')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download PDF
+      </button>
+    </div>
+    <div class="section-body">
+      <ul class="q-list" id="qListAnswers"></ul>
+      <div class="pager" id="pagerAnswers"></div>
+    </div>
+    </div>
+
+
+    <!-- SECTION 3: JSON -->
+    <div id="sectionJSON">
+    <div class="section-header s3">
+      <div>
+        <div class="section-badge"><div class="badge-num">3</div> JSON Export</div>
+        <div class="section-title" style="margin-top:4px">EduGlobalForge quiz format — ready to import</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="copyJSON()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="downloadJSON()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download JSON
+        </button>
+      </div>
+    </div>
+    <div class="section-body">
+      <pre id="jsonOutput"></pre>
+    </div>
+    </div>
+
+  </div><!-- /outputArea -->
+</div><!-- /app -->
+
+<!-- ── SETTINGS MODAL ── -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal modal-wide">
+    <button class="modal-close" onclick="closeSettings()">✕</button>
+    <h2>API Key Settings</h2>
+    <p class="sub">Paste your Gemini API keys below. Keys auto-rotate when one hits its quota — add as many as you like.</p>
+
+    <div class="active-key-banner" id="activeKeyBanner">
+      <div class="key-indicator"></div>
+      <div>
+        <div class="active-key-title" id="activeKeyTitle">No key active yet</div>
+        <div class="active-key-sub" id="activeKeySub">Add a key below to get started</div>
+      </div>
+    </div>
+
+    <!-- GITHUB SYNC -->
+    <div class="settings-section">
+      <div class="settings-section-title">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.1 3.29 9.42 7.86 10.96.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.25 3.33.95.1-.74.4-1.25.72-1.53-2.55-.29-5.23-1.27-5.23-5.67 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.38-5.25 5.66.41.36.78 1.06.78 2.15 0 1.56-.01 2.81-.01 3.19 0 .31.21.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+        Cross-Device Sync (optional)
+      </div>
+      <div class="token-row">
+        <div class="input-with-eye">
+          <input type="password" id="syncPassphrase" placeholder="Sync passphrase (leave empty to disable sync)"/>
+          <button class="eye-toggle" type="button" onclick="toggleEye('syncPassphrase')" aria-label="Show passphrase">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-block" id="retrieveKeysBtn" onclick="retrieveKeysFromPassphrase()" style="margin-top:10px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        Retrieve Keys
+      </button>
+      <div id="tokenStatusLine" class="token-status-line">
+        <div class="token-dot"></div>
+        <span id="tokenStatusText">No passphrase set — nothing leaves this device.</span>
+      </div>
+    </div>
+
+    <!-- WORDPRESS CONNECTION -->
+    <div class="settings-section">
+      <div class="settings-section-title">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        WordPress Connection (eduglobalforge.com)
+      </div>
+      <div class="token-status-line"><div class="token-dot"></div>Handled server-side — no credentials are stored in this browser.</div>
+    </div>
+
+    <div id="keySlotsContainer"></div>
+
+    <button class="btn btn-secondary btn-block" onclick="addKeySlot()" style="margin-top:6px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add another key
+    </button>
+
+    <div class="quota-row">
+      <label for="dailyQuotaInput">Daily request limit per key (for the usage bar)</label>
+      <input type="number" id="dailyQuotaInput" min="1" value="250"/>
+    </div>
+    <p class="quota-note">This app counts requests itself — Google doesn't expose live quota numbers through the API. Usage resets automatically 24 hours after a key's first use. Adjust the number above to match your actual plan.</p>
+
+    <div class="key-status">
+      <div class="key-indicator"></div>
+      <span id="keyStatusText">No keys saved yet — paste at least one key above.</span>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn btn-primary" onclick="saveKeys()">Save Keys</button>
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="toast"><div class="t-dot"></div><span id="toastMsg"></span></div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════
+let uploadedFiles   = [];   // File objects
+let extractedData   = null; // { questions, courseUniversity, courseFaculty, courseDepartment, courseTitle, courseSemester, courseYear, docTitle }
+let verifiedData    = null; // questions with answers + explanations
+let generatedJSON   = null;
+let currentKeyIndex = 0;
+let processingStage = 0;    // 0=fresh, 1=extracted, 2=verified
+const GEMINI_MODEL  = 'gemini-2.5-flash';
+
+// ════════════════════════════════════════════════════════
+//  API KEY MANAGEMENT — unlimited keys, live usage tracking
+// ════════════════════════════════════════════════════════
+const KEYS_STORAGE   = 'egf_keys_v2';
+const QUOTA_STORAGE  = 'egf_daily_quota';
+const DEFAULT_QUOTA  = 250;
+
+// Each stored key record: { id, label, key, count, windowStart }
+// "windowStart" is the timestamp the current 24h usage window began.
+// Usage auto-resets once 24h have passed since windowStart.
+
+function loadKeyRecords(){
+  let records=[];
+  try{ records=JSON.parse(localStorage.getItem(KEYS_STORAGE)||'[]'); }catch(_){ records=[]; }
+
+  // Migrate legacy egf_key0..3 slots (one-time, silent) if v2 storage is empty
+  if(records.length===0){
+    const legacyLabels=['Your Key',"Bro's Key","Sis's Key","Babe's Key"];
+    ['key0','key1','key2','key3'].forEach((k,i)=>{
+      const v=localStorage.getItem('egf_'+k);
+      if(v){
+        records.push({id:'k'+Date.now()+i,label:legacyLabels[i],key:v,count:0,windowStart:Date.now()});
+        localStorage.removeItem('egf_'+k);
+      }
+    });
+    if(records.length) saveKeyRecords(records);
+  }
+
+  // Reset usage windows that have expired (24h elapsed)
+  const now=Date.now();
+  let changed=false;
+  records.forEach(r=>{
+    if(!r.windowStart){ r.windowStart=now; changed=true; }
+    if(now-r.windowStart>=86400000){ r.count=0; r.windowStart=now; changed=true; }
+  });
+  if(changed) saveKeyRecords(records);
+  return records;
+}
+function saveKeyRecords(records){
+  localStorage.setItem(KEYS_STORAGE,JSON.stringify(records));
+}
+function getDailyQuota(){
+  const v=parseInt(localStorage.getItem(QUOTA_STORAGE),10);
+  return (Number.isFinite(v)&&v>0)?v:DEFAULT_QUOTA;
+}
+function setDailyQuota(v){
+  localStorage.setItem(QUOTA_STORAGE,String(v));
+}
+function getKeys(){
+  return loadKeyRecords().map(r=>r.key).filter(Boolean);
+}
+function recordKeyUsage(apiKey){
+  const records=loadKeyRecords();
+  const rec=records.find(r=>r.key===apiKey);
+  if(rec){ rec.count=(rec.count||0)+1; saveKeyRecords(records); }
+  renderActiveKeyBanner();
+}
+
+// ── Modal rendering ──
+let modalKeyDraft=[]; // working copy while modal is open, committed on Save
+
+function renderKeySlots(){
+  const container=document.getElementById('keySlotsContainer');
+  container.innerHTML='';
+  if(modalKeyDraft.length===0){
+    container.innerHTML='<p style="font-size:12.5px;color:var(--white-faint);padding:6px 2px">No keys yet — click "Add another key" below.</p>';
+    return;
+  }
+  const quota=getDailyQuota();
+  modalKeyDraft.forEach((rec,idx)=>{
+    const pct=Math.min(100,Math.round(((rec.count||0)/quota)*100));
+    const barColor=pct>=90?'var(--red)':pct>=60?'var(--gold)':'var(--green)';
+    const isActive=idx===currentKeyIndex%Math.max(modalKeyDraft.length,1);
+    const row=document.createElement('div');
+    row.className='key-row'+(isActive?' is-active':'');
+    row.innerHTML=`
+      <div class="key-row-top">
+        <input type="text" value="${escAttr(rec.label)}" placeholder="Label" data-field="label" data-idx="${idx}"/>
+        <span class="key-row-active-pill">ACTIVE NOW</span>
+        <button class="key-row-remove" type="button" data-idx="${idx}" title="Remove key">✕</button>
+      </div>
+      <div class="key-row-key-wrap">
+        <input type="password" class="key-row-key-input" value="${escAttr(rec.key)}" placeholder="AIza..." data-field="key" data-idx="${idx}"/>
+        <button class="key-row-eye" type="button" data-idx="${idx}" title="Show/hide key" aria-label="Show or hide API key">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <div class="key-row-usage">
+        <div class="key-row-usage-track"><div class="key-row-usage-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <span class="key-row-usage-label">${rec.count||0} / ${quota} today (${pct}%)</span>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('[data-field="label"]').forEach(el=>{
+    el.addEventListener('input',e=>{ modalKeyDraft[+e.target.dataset.idx].label=e.target.value; });
+  });
+  container.querySelectorAll('[data-field="key"]').forEach(el=>{
+    el.addEventListener('input',e=>{ modalKeyDraft[+e.target.dataset.idx].key=e.target.value.trim(); });
+  });
+  container.querySelectorAll('.key-row-remove').forEach(el=>{
+    el.addEventListener('click',e=>{
+      modalKeyDraft.splice(+e.target.dataset.idx,1);
+      renderKeySlots();
+    });
+  });
+  container.querySelectorAll('.key-row-eye').forEach(el=>{
+    el.addEventListener('click',e=>{
+      const btn=e.currentTarget;
+      const input=btn.previousElementSibling;
+      if(!input) return;
+      input.type = input.type==='password' ? 'text' : 'password';
+    });
+  });
+}
+function escAttr(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+function toggleEye(inputId){
+  const input=document.getElementById(inputId);
+  if(!input) return;
+  input.type = input.type==='password' ? 'text' : 'password';
+}
+
+// ════════════════════════════════════════════════════════
+//  ENCRYPTED CROSS-DEVICE SYNC (passphrase-based, optional)
+//  All GitHub Gist calls go through /api/gist-sync, a Vercel serverless
+//  function that holds the GitHub token server-side (env var
+//  GIST_SYNC_TOKEN). The token is never present in this file or shipped
+//  to the browser. The gist content itself is encrypted client-side with
+//  AES-GCM, using a key derived from the user's passphrase via PBKDF2 —
+//  the token can only ever read/write this one gist's ciphertext, it
+//  cannot decrypt it.
+// ════════════════════════════════════════════════════════
+const LS_GIST_ID    = 'egf_sync_gist_id';
+const LS_PASSPHRASE = 'egf_sync_passphrase'; // remembered locally so you don't retype it every open
+const GIST_FILENAME = 'eduglobalforge-sync.json';
+const GIST_DESC      = 'EduGlobalForge — Encrypted Sync Blob (do not edit manually)';
+
+function getPassphrase(){ return localStorage.getItem(LS_PASSPHRASE)||''; }
+function setPassphrase(p){ if(p) localStorage.setItem(LS_PASSPHRASE,p); else localStorage.removeItem(LS_PASSPHRASE); }
+function getGistId(){ return localStorage.getItem(LS_GIST_ID)||''; }
+function setGistId(id){ if(id) localStorage.setItem(LS_GIST_ID,id); else localStorage.removeItem(LS_GIST_ID); }
+
+// WordPress credentials are no longer stored client-side — handled
+// server-side via /api/wp-proxy.js using Vercel environment variables.
+
+// ---- Crypto: AES-GCM with a PBKDF2-derived key from the passphrase ----
+function b64(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function unb64(str){ return Uint8Array.from(atob(str),c=>c.charCodeAt(0)); }
+async function deriveKey(passphrase, saltBytes){
+  const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt:saltBytes, iterations:150000, hash:'SHA-256' },
+    baseKey, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']
+  );
+}
+async function encryptPayload(obj, passphrase){
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const key  = await deriveKey(passphrase, salt);
+  const data = new TextEncoder().encode(JSON.stringify(obj));
+  const cipherBuf = await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, data);
+  return { salt:b64(salt), iv:b64(iv), data:b64(cipherBuf) };
+}
+async function decryptPayload(blob, passphrase){
+  const salt = unb64(blob.salt);
+  const iv   = unb64(blob.iv);
+  const key  = await deriveKey(passphrase, salt);
+  const plainBuf = await crypto.subtle.decrypt({name:'AES-GCM',iv}, key, unb64(blob.data));
+  return JSON.parse(new TextDecoder().decode(plainBuf));
+}
+
+async function gistSyncCall(payload){
+  const res = await fetch('/api/gist-sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(()=> ({}));
+  if(!res.ok) throw new Error(data.error || `Sync request failed (${res.status})`);
+  return data;
+}
+async function findOrCreateSyncGist(){
+  const existingId=getGistId();
+  const data=await gistSyncCall({action:'find-or-create', gistId:existingId});
+  setGistId(data.gistId);
+  return data.gistId;
+}
+async function fetchSyncBlob(gistId){
+  const data=await gistSyncCall({action:'fetch', gistId});
+  return data.blob || null;
+}
+async function pushSyncBlob(gistId, blob){
+  await gistSyncCall({action:'push', gistId, blob});
+}
+function setTokenStatus(text,state){
+  const line=document.getElementById('tokenStatusLine');
+  const txt=document.getElementById('tokenStatusText');
+  if(!line||!txt) return;
+  txt.textContent=text;
+  line.className='token-status-line'+(state?' '+state:'');
+}
+// Manual pull: takes whatever passphrase is currently typed in the field,
+// fetches the encrypted blob, decrypts it, and merges the keys into the
+// modal draft immediately — without requiring a Save + reopen round trip.
+async function retrieveKeysFromPassphrase(){
+  const passphrase=document.getElementById('syncPassphrase').value.trim();
+  if(!passphrase){
+    setTokenStatus('Type a passphrase above first.','error');
+    return;
+  }
+  const btn=document.getElementById('retrieveKeysBtn');
+  if(btn) btn.disabled=true;
+  setTokenStatus('Retrieving synced keys...','');
+  try{
+    const gistId=await findOrCreateSyncGist();
+    const blob=await fetchSyncBlob(gistId);
+    if(!blob){
+      setTokenStatus('No synced data found for this passphrase yet.','error');
+      return;
+    }
+    const payload=await decryptPayload(blob, passphrase);
+    const merged=applySyncPayload(payload, loadKeyRecords());
+    if(!merged.length){
+      setTokenStatus('Synced blob was empty — nothing to retrieve.','error');
+      return;
+    }
+    modalKeyDraft=merged;
+    renderKeySlots();
+    saveKeyRecords(merged);
+    setPassphrase(passphrase);
+    currentKeyIndex=0;
+    updateKeyStatus();
+    renderActiveKeyBanner();
+    setTokenStatus('Retrieved — this passphrase will pull everything on any browser.','connected');
+    toast(`${merged.length} key${merged.length===1?'':'s'} retrieved`,'success');
+  }catch(e){
+    setTokenStatus('Retrieve failed: '+e.message+' (wrong passphrase?)','error');
+  }finally{
+    if(btn) btn.disabled=false;
+  }
+}
+// What actually gets synced: Gemini keys + WP credentials, bundled together.
+function buildSyncPayload(records){
+  return {
+    keys: records.map(r=>({id:r.id,name:r.label,value:r.key}))
+  };
+}
+function applySyncPayload(payload, existingRecords){
+  const byKey={}; existingRecords.forEach(r=>{ byKey[r.key]=r; });
+  const list=Array.isArray(payload.keys)?payload.keys:[];
+  return list.map(g=>{
+    const prev=byKey[g.value];
+    return {id:g.id||('k'+Date.now()+Math.random().toString(36).slice(2,6)),label:g.name||'Key',key:g.value||'',count:prev?prev.count||0:0,windowStart:prev?prev.windowStart||Date.now():Date.now()};
+  }).filter(r=>r.key);
+}
+function addKeySlot(){
+  modalKeyDraft.push({id:'k'+Date.now()+Math.random().toString(36).slice(2,6),label:'New Key',key:'',count:0,windowStart:Date.now()});
+  renderKeySlots();
+}
+
+function loadKeysIntoModal(){
+  // Deep copy current saved records into the draft so edits don't leak until Save
+  modalKeyDraft=loadKeyRecords().map(r=>({...r}));
+  document.getElementById('dailyQuotaInput').value=getDailyQuota();
+  renderKeySlots();
+}
+function saveKeys(){
+  const quotaVal=parseInt(document.getElementById('dailyQuotaInput').value,10);
+  if(Number.isFinite(quotaVal)&&quotaVal>0) setDailyQuota(quotaVal);
+
+  // Remember which key (by value, not index) was active before this save
+  const prevRecords=loadKeyRecords();
+  const prevActiveKey=prevRecords.length?prevRecords[currentKeyIndex%prevRecords.length].key:null;
+
+  // Drop fully-empty rows, keep usage counters for rows that already existed
+  const cleaned=modalKeyDraft
+    .filter(r=>r.key&&r.key.trim())
+    .map(r=>({id:r.id,label:(r.label||'Key').trim()||'Key',key:r.key.trim(),count:r.count||0,windowStart:r.windowStart||Date.now()}));
+
+  saveKeyRecords(cleaned);
+
+  // Re-anchor the active pointer to the SAME key as before (if it still exists),
+  // instead of trusting the old index — which would point at the wrong key
+  // after a removal/reorder.
+  if(cleaned.length===0){
+    currentKeyIndex=0;
+  } else {
+    const sameKeyIdx=prevActiveKey?cleaned.findIndex(r=>r.key===prevActiveKey):-1;
+    currentKeyIndex=sameKeyIdx!==-1?sameKeyIdx:0;
+  }
+
+  updateKeyStatus();
+  renderActiveKeyBanner();
+
+  const passphrase=document.getElementById('syncPassphrase').value.trim();
+  const previousPassphrase=getPassphrase();
+  setPassphrase(passphrase);
+
+  if(!passphrase){
+    closeSettings();
+    toast(previousPassphrase?'Passphrase removed — nothing syncs anymore':`${cleaned.length} key${cleaned.length===1?'':'s'} saved`,'success');
+    return;
+  }
+
+  setTokenStatus('Encrypting & syncing...','');
+  (async()=>{
+    try{
+      const gistId=await findOrCreateSyncGist();
+      const blob=await encryptPayload(buildSyncPayload(cleaned), passphrase);
+      await pushSyncBlob(gistId, blob);
+      setTokenStatus('Synced — this passphrase will pull everything on any browser.','connected');
+      closeSettings();
+      toast('Saved & synced across devices','success');
+    }catch(e){
+      setTokenStatus('Sync failed: '+e.message,'error');
+      closeSettings();
+      toast('Saved locally, but sync failed: '+e.message,'error');
+    }
+  })();
+}
+function updateKeyStatus(){
+  const keys=getKeys();
+  const el=document.getElementById('keyStatusText');
+  if(keys.length===0) el.textContent='No keys saved yet — paste at least one key above.';
+  else el.textContent=`${keys.length} key${keys.length>1?'s':''} saved. Currently using key ${currentKeyIndex+1} of ${keys.length}.`;
+}
+function renderActiveKeyBanner(){
+  const titleEl=document.getElementById('activeKeyTitle');
+  const subEl=document.getElementById('activeKeySub');
+  const pillEl=document.getElementById('headerKeyPill');
+  const pillTextEl=document.getElementById('headerKeyPillText');
+  const records=loadKeyRecords();
+
+  if(records.length===0){
+    if(titleEl) titleEl.textContent='No key active yet';
+    if(subEl) subEl.textContent='Add a key below to get started';
+    if(pillEl){ pillEl.className='header-key-pill'; }
+    if(pillTextEl) pillTextEl.textContent='No key active — tap to add';
+    return;
+  }
+
+  const idx=currentKeyIndex%records.length;
+  const rec=records[idx];
+  const quota=getDailyQuota();
+  const pct=Math.min(100,Math.round(((rec.count||0)/quota)*100));
+
+  if(titleEl) titleEl.textContent=`Active: ${rec.label} (key ${idx+1} of ${records.length})`;
+  if(subEl) subEl.textContent=`${rec.count||0} / ${quota} requests used today · ${pct}%`;
+
+  if(pillEl){
+    pillEl.className='header-key-pill '+(pct>=90?'crit':pct>=60?'warn':'ok');
+  }
+  if(pillTextEl){
+    pillTextEl.textContent=`${rec.label} · ${pct}% used (${idx+1}/${records.length})`;
+  }
+
+  // Re-render slot list too, in case the modal is open, so the bars stay live
+  if(modalKeyDraft.length) renderKeySlots();
+}
+async function openSettings(){
+  loadKeysIntoModal();
+  updateKeyStatus();
+  renderActiveKeyBanner();
+  document.getElementById('settingsModal').classList.add('open');
+  document.body.classList.add('modal-open');
+
+  document.getElementById('syncPassphrase').value=getPassphrase();
+
+  const passphrase=getPassphrase();
+  if(passphrase){
+    setTokenStatus('Fetching synced data...','');
+    try{
+      const gistId=await findOrCreateSyncGist();
+      const blob=await fetchSyncBlob(gistId);
+      if(blob){
+        const payload=await decryptPayload(blob, passphrase);
+        const merged=applySyncPayload(payload, loadKeyRecords());
+        if(merged.length){
+          modalKeyDraft=merged;
+          renderKeySlots();
+          saveKeyRecords(merged);
+          currentKeyIndex=0;
+          updateKeyStatus();
+          renderActiveKeyBanner();
+        }
+      }
+      setTokenStatus('Synced — this passphrase will pull everything on any browser.','connected');
+    }catch(e){
+      setTokenStatus('Sync failed: '+e.message+' (using locally saved data — wrong passphrase?)','error');
+    }
+  }else{
+    setTokenStatus('No passphrase set — nothing leaves this device.','');
+  }
+}
+function closeSettings(){ document.getElementById('settingsModal').classList.remove('open'); document.body.classList.remove('modal-open'); }
+
+// ════════════════════════════════════════════════════════
+//  GEMINI API CALL WITH AUTO KEY ROTATION
+// ════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════
+//  RATE-LIMIT AUTO-RETRY (waits out a 429 instead of failing)
+// ════════════════════════════════════════════════════════
+const MAX_RATE_LIMIT_ROUNDS=3; // how many full wait-and-retry cycles to attempt
+const RATE_LIMIT_FALLBACK_WAIT_SECONDS=20; // used if Gemini's error message has no "retry in Ns" hint
+
+function waitWithCountdown(totalSeconds,round){
+  return new Promise(resolve=>{
+    let remaining=totalSeconds;
+    const label=document.getElementById('progressLabel');
+    const tick=()=>{
+      if(label) label.textContent=`Rate limited — retrying in ${remaining}s (attempt ${round}/${MAX_RATE_LIMIT_ROUNDS})...`;
+      if(remaining<=0){
+        clearInterval(intervalId);
+        resolve();
+        return;
+      }
+      remaining--;
+    };
+    tick();
+    const intervalId=setInterval(tick,1000);
+  });
+}
+
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0, model=GEMINI_MODEL, maxTokens=65536, timeoutMs=45000){
+  const keys=getKeys();
+  if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
+  if(attempt>=keys.length*2*(MAX_RATE_LIMIT_ROUNDS+1)) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
+
+  if(startKeyIdx===null) startKeyIdx=currentKeyIndex;
+  const keyIdx=(startKeyIdx+attempt)%keys.length;
+  const apiKey=keys[keyIdx];
+
+  const is25Flash=model.includes('2.5');
+  const body={
+    contents:[{role:'user',parts}],
+    generationConfig:Object.assign(
+      {temperature:0.1,topP:0.95,maxOutputTokens:maxTokens},
+      is25Flash?{thinkingConfig:{thinkingBudget}}:{}
+    ),
+  };
+  if(systemInstruction){
+    body.system_instruction={parts:[{text:systemInstruction}]};
+  }
+
+  // Hard timeout so a runaway/degenerate stream can't hang forever
+  const abortController=new AbortController();
+  const timeoutId=setTimeout(()=>abortController.abort(),timeoutMs);
+
+  let res;
+  try{
+    res=await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:abortController.signal}
+    );
+  }catch(e){
+    clearTimeout(timeoutId);
+    if(e.name==='AbortError') throw new Error('Request timed out — Gemini took too long to respond. Try again.');
+    throw new Error('Network error: '+e.message);
+  }
+
+  clearTimeout(timeoutId);
+
+  if(res.status===429||res.status===503){
+    if(attempt>=keys.length*2-1){
+      // All keys exhausted this round. For 429 specifically, this usually means
+      // every project's per-minute quota is briefly full — wait it out and
+      // retry automatically instead of failing outright.
+      if(res.status===429 && attempt<keys.length*2-1+(MAX_RATE_LIMIT_ROUNDS*keys.length*2)){
+        const err=await res.json().catch(()=>({}));
+        const msg=err?.error?.message||res.statusText;
+        const waitMatch=msg.match(/retry in (\d+(?:\.\d+)?)/i);
+        const waitSeconds=waitMatch?Math.ceil(parseFloat(waitMatch[1])):RATE_LIMIT_FALLBACK_WAIT_SECONDS;
+        const round=Math.floor(attempt/(keys.length*2))+1;
+        if(round<=MAX_RATE_LIMIT_ROUNDS){
+          await waitWithCountdown(waitSeconds,round);
+          return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model,maxTokens,timeoutMs);
+        }
+      }
+      const err=await res.json().catch(()=>({}));
+      throw new Error(`Gemini error (${res.status}): ${err?.error?.message||res.statusText}`);
+    }
+    currentKeyIndex=(currentKeyIndex+1)%keys.length;
+    renderActiveKeyBanner();
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model);
+  }
+  if(!res.ok){
+    const err=await res.json().catch(()=>({}));
+    const msg=err?.error?.message||res.statusText;
+    if(res.status===400&&msg.includes('API_KEY_INVALID')){
+      currentKeyIndex=(currentKeyIndex+1)%keys.length;
+      renderActiveKeyBanner();
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model);
+    }
+    throw new Error(`Gemini error: ${msg}`);
+  }
+
+  // Request succeeded against this key — count it toward today's usage
+  recordKeyUsage(apiKey);
+
+  // ── Stream the response ──
+  const reader=res.body.getReader();
+  const decoder=new TextDecoder();
+  let fullText='';
+  let buffer='';
+  let finishReason='';
+  const MAX_CHARS=maxTokens*5; // rough safety ceiling (≈5 chars/token) to catch degenerate streams even if abort signal is delayed
+  let forcedStop=false;
+
+  while(true){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buffer+=decoder.decode(value,{stream:true});
+    // SSE lines start with "data: "
+    const lines=buffer.split('\n');
+    buffer=lines.pop(); // keep incomplete last line
+    for(const line of lines){
+      if(!line.startsWith('data: ')) continue;
+      const json=line.slice(6).trim();
+      if(json==='[DONE]') continue;
+      try{
+        const chunk=JSON.parse(json);
+        const piece=chunk?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+        if(chunk?.candidates?.[0]?.finishReason) finishReason=chunk.candidates[0].finishReason;
+        if(piece){
+          fullText+=piece;
+          // Update progress label with live character count
+          const label=document.getElementById('progressLabel');
+          if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
+          // Yield to browser so UI actually paints on Android
+          await new Promise(r=>setTimeout(r,0));
+          if(fullText.length>MAX_CHARS){
+            forcedStop=true;
+            try{ reader.cancel(); }catch(_){}
+            break;
+          }
+        }
+      }catch(_){}
+    }
+    if(forcedStop) break;
+  }
+
+  if(forcedStop) throw new Error('Response exceeded safe length — Gemini may have entered a repetitive loop. Try again.');
+  if(!fullText) throw new Error('Empty response from Gemini. Try again.');
+  if(finishReason==='MAX_TOKENS') throw new Error('Response was cut off (too many questions/images in one batch). Try uploading fewer images per batch.');
+  return fullText;
+}
+
+// Robustly extract JSON from Gemini response regardless of wrapping
+function extractJSON(text){
+  if(!text) throw new Error('Empty response');
+
+  // 1. Strip all markdown fences
+  let s=text.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+
+  // 2. Direct parse
+  try{ return JSON.parse(s); }catch(_){}
+
+  // 3. Find outermost { ... } (object)
+  const o1=s.indexOf('{'); const o2=s.lastIndexOf('}');
+  if(o1!==-1&&o2>o1){
+    try{ return JSON.parse(s.slice(o1,o2+1)); }catch(_){}
+  }
+
+  // 4. Find outermost [ ... ] (array)
+  const a1=s.indexOf('['); const a2=s.lastIndexOf(']');
+  if(a1!==-1&&a2>a1){
+    try{ return JSON.parse(s.slice(a1,a2+1)); }catch(_){}
+  }
+
+  // 5. Fix trailing commas and unquoted keys then retry object
+  if(o1!==-1&&o2>o1){
+    try{
+      const fixed=s.slice(o1,o2+1)
+        .replace(/,\s*([}\]])/g,'$1')
+        .replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
+      return JSON.parse(fixed);
+    }catch(_){}
+  }
+
+  // 6. Fix trailing commas in arrays
+  if(a1!==-1&&a2>a1){
+    try{
+      const fixed=s.slice(a1,a2+1)
+        .replace(/,\s*([}\]])/g,'$1')
+        .replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
+      return JSON.parse(fixed);
+    }catch(_){}
+  }
+
+  // 7. Last resort: strip control chars and retry array
+  try{
+    const cleaned=s.replace(/[\x00-\x09\x0b\x0c\x0e-\x1f]/g,'');
+    const oa=cleaned.indexOf('['); const oz=cleaned.lastIndexOf(']');
+    if(oa!==-1&&oz>oa){
+      const fixed=cleaned.slice(oa,oz+1).replace(/,\s*([}\]])/g,'$1');
+      return JSON.parse(fixed);
+    }
+  }catch(_){}
+
+  throw new Error('Could not extract JSON from response');
+}
+
+
+// ════════════════════════════════════════════════════════
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+}
+function handleDragOver(e){
+  e.preventDefault();
+  document.getElementById('dropZone').classList.add('dragover');
+}
+function handleDragLeave(){ document.getElementById('dropZone').classList.remove('dragover') }
+
+function handleFiles(files){
+  const arr=Array.from(files).filter(f=>f.type.startsWith('image/'));
+  if(!arr.length){ toast('Only image files accepted (JPG, PNG, WEBP)','error'); return; }
+  arr.forEach(f=>{ if(!uploadedFiles.find(x=>x.name===f.name&&x.size===f.size)) uploadedFiles.push(f); });
+  // New images uploaded — reset stage so extraction runs again from scratch
+  processingStage=0;
+  extractedData=null; verifiedData=null; generatedJSON=null;
+  renderThumbs();
+  document.getElementById('processBtn').disabled=uploadedFiles.length===0;
+  document.getElementById('metaFields').style.display='block';
+}
+
+function renderThumbs(){
+  const grid=document.getElementById('thumbGrid');
+  // Revoke old object URLs to prevent memory leak
+  grid.querySelectorAll('img').forEach(img=>URL.revokeObjectURL(img.src));
+  grid.innerHTML='';
+  uploadedFiles.forEach((f,i)=>{
+    const url=URL.createObjectURL(f);
+    const div=document.createElement('div'); div.className='thumb';
+    div.innerHTML=`<img src="${url}" alt="img ${i+1}"/>
+      <button class="thumb-remove" onclick="removeFile(${i})">✕</button>
+      <div class="thumb-num">${i+1}</div>`;
+    grid.appendChild(div);
+  });
+}
+function removeFile(i){
+  uploadedFiles.splice(i,1);
+  renderThumbs();
+  document.getElementById('processBtn').disabled=uploadedFiles.length===0;
+  if(!uploadedFiles.length) document.getElementById('metaFields').style.display='none';
+}
+function resetAll(){
+  uploadedFiles=[];
+  extractedData=null; verifiedData=null; generatedJSON=null;
+  processingStage=0;
+  document.getElementById('thumbGrid').innerHTML='';
+  document.getElementById('metaFields').style.display='none';
+  document.getElementById('processBtn').disabled=true;
+  document.getElementById('progressWrap').style.display='none';
+  setProgress(0,'');
+  document.getElementById('outputArea').style.display='none';
+  ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.value='';
+    el.disabled=true;
+  });
+  document.getElementById('fileInput').value='';
+}
+
+// ════════════════════════════════════════════════════════
+//  FILE → COMPRESSED BASE64
+// ════════════════════════════════════════════════════════
+function fileToBase64(file){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      // Resize to max 1024px on longest side
+      const MAX=1024;
+      let w=img.width; let h=img.height;
+      if(w>MAX||h>MAX){
+        if(w>h){ h=Math.round(h*MAX/w); w=MAX; }
+        else { w=Math.round(w*MAX/h); h=MAX; }
+      }
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      // JPEG at 85% quality — readable text, small size
+      const dataUrl=canvas.toDataURL('image/jpeg',0.85);
+      res(dataUrl.split(',')[1]);
+    };
+    img.onerror=()=>rej(new Error('Failed to read '+file.name));
+    img.src=url;
+  });
+}
+
+// ════════════════════════════════════════════════════════
+//  PROGRESS HELPERS
+// ════════════════════════════════════════════════════════
+function setStep(n, state='active'){
+  for(let i=1;i<=4;i++){
+    const el=document.getElementById('step'+i);
+    el.className='step-item'+(i<n?' done':i===n?' '+state:'');
+  }
+}
+function setProgress(pct,label){
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('progressLabel').textContent=label;
+}
+
+// ════════════════════════════════════════════════════════
+//  MAIN PROCESSING
+// ════════════════════════════════════════════════════════
+async function startProcessing(){
+  if(!uploadedFiles.length){ toast('Upload at least one image first','error'); return; }
+  if(!getKeys().length){ openSettings(); toast('Add at least one Gemini API key first','error'); return; }
+
+  document.getElementById('progressWrap').style.display='block';
+  document.getElementById('processBtn').disabled=true;
+  document.getElementById('resetBtn').disabled=true;
+
+  // If resuming after a partial failure, show where we're continuing from
+  if(processingStage===1){
+    toast('Resuming from Step 2 — verification...','info');
+  } else if(processingStage===0){
+    // Full fresh run: hide old output and reset course fields
+    document.getElementById('outputArea').style.display='none';
+    ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
+      const el=document.getElementById(id);
+      el.value='';
+      el.disabled=true;
+    });
+    setProgress(0,'Preparing images...');
+    setStep(1,'active');
+  }
+
+  try{
+
+    // ══ STAGE 0→1: EXTRACTION ══════════════════════════════
+    if(processingStage===0){
+      // Convert all images to base64 in parallel
+      const base64Images=await Promise.all(uploadedFiles.map(fileToBase64));
+
+      setProgress(10,'Extracting questions & course info...');
+      setStep(1,'active');
+
+      const imageParts=base64Images.map((b64)=>({
+        inline_data:{mime_type:'image/jpeg',data:b64}
+      }));
+
+      const extractionPrompt=`Extract ALL exam questions and course info from ALL provided images combined.
+
+Output ONLY a raw JSON object. No text before it. No text after it. No markdown. No backticks. No explanation. Start your response with { and end with }.
+
+{"courseUniversity":"","courseFaculty":"","courseDepartment":"","courseTitle":"","courseCode":"","courseSemester":"","courseYear":"","questions":[{"question":"","options":[{"label":"A","text":""},{"label":"B","text":""},{"label":"C","text":""},{"label":"D","text":""}]}]}
+
+Rules:
+- Extract EVERY SINGLE question from ALL images — do not skip any question
+- Scan every image completely from top to bottom and left to right; count every numbered item
+- The question text MUST NOT include any leading number or numbering prefix (strip "26.", "50.", "Q3." etc.)
+- CRITICAL OPTION EXTRACTION: Many Nigerian exam questions embed all options inline inside the question text using patterns like "(a) option1 (b) option2 (c) option3 (d) option4" or "....... (a) X (b) Y (c) Z (d) W". When you see this pattern, you MUST split them out: the question field gets only the stem text before the first "(a)", and options A/B/C/D get the individual option texts extracted from (a)/(b)/(c)/(d). NEVER leave option text inside the question field.
+- Each option text should be clean — just the option content, no label prefix like "(a)" or "A."
+- Normalize options to labels A B C D (E if present)
+- courseCode: look for a course code like "PHY 103", "MTH 101", "ENG 201" etc. Use "" if not found
+- Use "" for any course field not found
+- courseTitle defaults to "Unknown Course" if missing
+- courseYear defaults to "Unknown Year" if missing
+- Questions with fewer than 4 options: include only what exists
+- YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
+
+      const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
+
+      setProgress(30,'Parsing extraction results...');
+      let extracted;
+      try{
+        extracted=extractJSON(extractText);
+      }catch(e){
+        throw new Error('Failed to parse extraction response. Try again.');
+      }
+
+      if(!extracted.questions||!extracted.questions.length){
+        throw new Error('No questions found in the images. Make sure the images are clear and contain exam questions.');
+      }
+
+      // Strip any leading numbering the AI may have left on question text e.g. "26. ", "Q3. "
+      extracted.questions.forEach(q=>{
+        q.question=q.question.replace(/^\s*(?:Q\s*)?\d+[\.\)]\s*/i,'').trim();
+      });
+
+      // Pre-fill editable fields and enable them for editing
+      document.getElementById('courseUniversity').value=extracted.courseUniversity||'';
+      document.getElementById('courseFaculty').value=extracted.courseFaculty||'';
+      document.getElementById('courseDepartment').value=extracted.courseDepartment||'';
+      document.getElementById('courseTitle').value=extracted.courseTitle||'';
+      document.getElementById('courseCode').value=extracted.courseCode||'';
+      document.getElementById('courseSemester').value=extracted.courseSemester||'';
+      document.getElementById('courseYear').value=extracted.courseYear||'';
+      ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
+
+      // Save extraction result so we can resume from here if verification fails
+      extractedData={
+        questions:extracted.questions,
+        courseUniversity:extracted.courseUniversity||'',
+        courseFaculty:extracted.courseFaculty||'',
+        courseDepartment:extracted.courseDepartment||'',
+        courseTitle:extracted.courseTitle||'',
+        courseCode:extracted.courseCode||'',
+        courseSemester:extracted.courseSemester||'',
+        courseYear:extracted.courseYear||'',
+        docTitle:'',
+      };
+      processingStage=1; // extraction done — resume point
+    }
+
+    // ══ STAGE 1→2: VERIFICATION ════════════════════════════
+    if(processingStage===1){
+      setProgress(35,'Verifying answers — Pass 1 & 2 (parallel)...');
+      setStep(2,'active');
+
+      const questionsForVerification=extractedData.questions.map((q,i)=>{
+        const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+        return `Q${i+1}: ${q.question}\n${opts}`;
+      }).join('\n\n');
+
+      const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"max 12 words, key reason only"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Keep explanation under 12 words — no exceptions. Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+      const verifyPrompt2=`You are an independent academic examiner. Answer each MCQ below completely independently.
+Return ONLY a valid JSON array, no markdown:
+[{"qIndex":0,"correctLabel":"A"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Do NOT include explanation or correctText — only qIndex and correctLabel. Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+      const keys=getKeys();
+      const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
+      const [pass1Text,pass2Text]=await Promise.all([
+        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash'),
+        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash')
+      ]);
+
+      setProgress(70,'Resolving conflicts...');
+      setStep(3,'active');
+      let pass1;
+      try{
+        pass1=extractJSON(pass1Text);
+        if(!Array.isArray(pass1)) throw new Error('Not an array');
+      }catch(e){
+        try{
+          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash');
+          pass1=extractJSON(retryText);
+          if(!Array.isArray(pass1)) throw new Error('Not an array');
+        }catch(e2){
+          throw new Error('Failed to parse Pass 1 answer verification. Try again.');
+        }
+      }
+
+      let pass2;
+      try{
+        pass2=extractJSON(pass2Text);
+        if(!Array.isArray(pass2)) throw new Error('Not an array');
+      }catch(e){
+        try{
+          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash');
+          pass2=extractJSON(retryText);
+          if(!Array.isArray(pass2)) throw new Error('Not an array');
+        }catch(e2){
+          pass2=pass1;
+        }
+      }
+
+      setProgress(75,'Resolving conflicts...');
+      const conflicts=[];
+      pass1.forEach((a1)=>{
+        const a2=pass2.find(x=>x.qIndex===a1.qIndex);
+        if(a2&&a1.correctLabel!==a2.correctLabel) conflicts.push(a1.qIndex);
+      });
+
+      const finalAnswers=new Map();
+      pass1.forEach(a=>finalAnswers.set(a.qIndex,{...a}));
+
+      if(conflicts.length>0){
+        // Resolve ALL conflicts in ONE single API call — fastest possible
+        const conflictQuestionsText=conflicts.map(ci=>{
+          const q=extractedData.questions[ci];
+          const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+          return `qIndex ${ci}:\n${q.question}\n${opts}`;
+        }).join('\n\n');
+
+        const bulkTiebreakPrompt=`Academic referee. Resolve ALL conflicting MCQ answers below in one go.
+Return ONLY a valid JSON array, no markdown, no backticks:
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"key reason in max 12 words"}]
+One object per question. qIndex must match exactly. Return ONLY the JSON array.
+
+CONFLICTING QUESTIONS:
+${conflictQuestionsText}`;
+
+        setProgress(78,`Resolving ${conflicts.length} conflict(s)...`);
+        try{
+          const tiebreakText=await geminiCall([{text:bulkTiebreakPrompt}],'You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ and end with ].',0,currentKeyIndex%getKeys().length,0,'gemini-2.5-flash');
+          const resolved=extractJSON(tiebreakText);
+          const resolvedArr=Array.isArray(resolved)?resolved:[resolved];
+          resolvedArr.forEach(r=>{ if(r&&typeof r.qIndex==='number') finalAnswers.set(r.qIndex,r); });
+        }catch(e){
+          // If bulk tiebreak fails, keep pass1 answers — no blocking
+        }
+      }
+
+      setProgress(88,'Generating outputs...');
+      setStep(4,'active');
+
+      // Read course fields (user may have edited them after extraction)
+      const finalUniversity=document.getElementById('courseUniversity').value||extractedData.courseUniversity||'';
+      const finalFaculty=document.getElementById('courseFaculty').value||extractedData.courseFaculty||'';
+      const finalDepartment=document.getElementById('courseDepartment').value||extractedData.courseDepartment||'';
+      const finalTitle=document.getElementById('courseTitle').value||extractedData.courseTitle||'Unknown Course';
+      const finalCode=document.getElementById('courseCode').value||extractedData.courseCode||'';
+      const finalSemester=document.getElementById('courseSemester').value||extractedData.courseSemester||'';
+      const finalYear=document.getElementById('courseYear').value||extractedData.courseYear||'';
+
+      const docTitleParts=[finalUniversity,finalFaculty,finalDepartment,finalCode,finalTitle,finalSemester,finalYear].filter(Boolean);
+      const docTitle=docTitleParts.join(' · ');
+
+      verifiedData=extractedData.questions.map((q,i)=>{
+        const ans=finalAnswers.get(i)||{correctLabel:'A',correctText:q.options[0]?.text||'',explanation:'Answer not verified.'};
+        return{
+          question:q.question,
+          options:q.options,
+          correctLabel:ans.correctLabel,
+          correctText:ans.correctText,
+          explanation:ans.explanation,
+        };
+      });
+
+      extractedData.courseUniversity=finalUniversity;
+      extractedData.courseFaculty=finalFaculty;
+      extractedData.courseDepartment=finalDepartment;
+      extractedData.courseTitle=finalTitle;
+      extractedData.courseCode=finalCode;
+      extractedData.courseSemester=finalSemester;
+      extractedData.courseYear=finalYear;
+      extractedData.docTitle=docTitle;
+
+      generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
+      processingStage=2; // verification done
+    }
+
+    // ══ STAGE 2: RENDER OUTPUT ══════════════════════════════
+    renderSection1(verifiedData);
+    renderSection2(verifiedData);
+    document.getElementById('jsonOutput').textContent=JSON.stringify(generatedJSON,null,2);
+
+    setProgress(100,'Done!');
+    setStep(4,'done');
+
+    setTimeout(()=>{
+      document.getElementById('outputArea').style.display='block';
+      showTab('sectionQuestions');
+      document.getElementById('jumpNav').scrollIntoView({behavior:'smooth',block:'start'});
+      toast(`${verifiedData.length} questions extracted and verified successfully!`,'success');
+    },500);
+
+  }catch(err){
+    toast(err.message,'error');
+    // Show a helpful resume hint based on what stage we reached
+    const resumeHint=processingStage===1?' (tap Extract & Analyse again to resume from verification)':'';
+    document.getElementById('progressLabel').textContent='Error: '+err.message+resumeHint;
+    setProgress(0,'');
+  }finally{
+    document.getElementById('processBtn').disabled=false;
+    document.getElementById('resetBtn').disabled=false;
+  }
+}
+
+// ════════════════════════════════════════════════════════
+//  JUMP NAV
+// ════════════════════════════════════════════════════════
+function showTab(id){
+  ['sectionQuestions','sectionAnswers','sectionJSON'].forEach(sid=>{
+    const sec=document.getElementById(sid);
+    const btn=document.getElementById('tabBtn_'+sid);
+    if(sec) sec.style.display=sid===id?'block':'none';
+    if(btn) btn.classList.toggle('active-tab',sid===id);
+  });
+  // Scroll jump nav into view so user sees the section immediately
+  document.getElementById('jumpNav').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function jumpToSection(id){ showTab(id); }
+
+// ════════════════════════════════════════════════════════
+//  RENDER SECTIONS (with pagination)
+// ════════════════════════════════════════════════════════
+const QUESTIONS_PER_PAGE=8;
+let pageStateOnly=1;
+let pageStateAnswers=1;
+
+function renderSection1(questions,page=1){
+  pageStateOnly=page;
+  const ul=document.getElementById('qListOnly');
+  ul.innerHTML='';
+  const totalPages=Math.max(1,Math.ceil(questions.length/QUESTIONS_PER_PAGE));
+  const startIdx=(page-1)*QUESTIONS_PER_PAGE;
+  const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
+  pageItems.forEach((q,pi)=>{
+    const i=startIdx+pi;
+    const li=document.createElement('li'); li.className='q-item';
+    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
+        <div class="q-text">${escHtml(q.question)}</div>
+        <div class="q-options">${opts}</div>
+      </div>`;
+    ul.appendChild(li);
+  });
+  renderPager('pagerOnly',page,totalPages,(p)=>renderSection1(questions,p));
+}
+
+function renderSection2(questions,page=1){
+  pageStateAnswers=page;
+  const ul=document.getElementById('qListAnswers');
+  ul.innerHTML='';
+  const totalPages=Math.max(1,Math.ceil(questions.length/QUESTIONS_PER_PAGE));
+  const startIdx=(page-1)*QUESTIONS_PER_PAGE;
+  const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
+  pageItems.forEach((q,pi)=>{
+    const i=startIdx+pi;
+    const li=document.createElement('li'); li.className='q-item';
+    const opts=q.options.map(o=>{
+      const isCorrect=o.label===q.correctLabel;
+      return `<div class="q-opt${isCorrect?' correct-opt':''}">
+        <span class="opt-label">${o.label}.</span>
+        <span class="opt-text">${escHtml(o.text)}</span>
+      </div>`;
+    }).join('');
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
+        <div class="q-text">${escHtml(q.question)}</div>
+        <div class="q-options">${opts}</div>
+        <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
+        <div class="explanation-box">
+          <div class="exp-label">Explanation</div>
+          <p>${escHtml(q.explanation)}</p>
+        </div>
+      </div>`;
+    ul.appendChild(li);
+  });
+  renderPager('pagerAnswers',page,totalPages,(p)=>renderSection2(questions,p));
+}
+
+function renderPager(containerId,currentPage,totalPages,onChange){
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML='';
+  if(totalPages<=1) return;
+
+  const makeBtn=(label,disabled,onClick,extraClass='')=>{
+    const b=document.createElement('button');
+    b.className='pager-btn '+extraClass;
+    b.textContent=label;
+    b.disabled=disabled;
+    if(!disabled) b.onclick=onClick;
+    return b;
+  };
+
+  el.appendChild(makeBtn('‹ Prev',currentPage<=1,()=>{ onChange(currentPage-1); jumpToContainer(containerId); },'pager-arrow'));
+
+  // Page number buttons (show all if few, else windowed around current)
+  const maxButtons=7;
+  let pages=[];
+  if(totalPages<=maxButtons){
+    pages=Array.from({length:totalPages},(_,i)=>i+1);
+  } else {
+    pages=[1];
+    let start=Math.max(2,currentPage-1);
+    let end=Math.min(totalPages-1,currentPage+1);
+    if(start>2) pages.push('…');
+    for(let p=start;p<=end;p++) pages.push(p);
+    if(end<totalPages-1) pages.push('…');
+    pages.push(totalPages);
+  }
+  pages.forEach(p=>{
+    if(p==='…'){
+      const span=document.createElement('span');
+      span.className='pager-btn';
+      span.style.cursor='default';
+      span.style.opacity='.5';
+      span.textContent='…';
+      el.appendChild(span);
+    } else {
+      const isActive=p===currentPage;
+      el.appendChild(makeBtn(String(p),false,()=>{ onChange(p); jumpToContainer(containerId); },isActive?'active':''));
+    }
+  });
+
+  el.appendChild(makeBtn('Next ›',currentPage>=totalPages,()=>{ onChange(currentPage+1); jumpToContainer(containerId); },'pager-arrow'));
+}
+
+function jumpToContainer(pagerId){
+  // Scroll the parent section-body into view so user lands at top of the new page's results
+  const pagerEl=document.getElementById(pagerId);
+  const sectionBody=pagerEl?.closest('.section-body');
+  if(sectionBody) sectionBody.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+// ════════════════════════════════════════════════════════
+//  BUILD JSON (EduGlobalForge format)
+// ════════════════════════════════════════════════════════
+function buildJSON(questions, courseTitle, courseYear){
+  const slug=buildSlug(courseTitle,courseYear);
+  const now=new Date().toISOString().replace('T',' ').substring(0,19);
+  let globalId=1; let globalAnswerId=1;
+
+  return questions.map(q=>{
+    const qId=String(globalId++);
+    const answers=q.options.map((opt,oi)=>{
+      const isCorrect=opt.label===q.correctLabel;
+      return{
+        id:String(globalAnswerId++),
+        question_id:qId,
+        answer:opt.text,
+        image:null,
+        correct:isCorrect?"1":"0",
+        ordering:String(oi+1),
+        weight:"0",
+        keyword:null,
+        placeholder:null,
+      };
+    });
+    return{
+      id:qId,
+      author_id:"5",
+      tag_id:null,
+      question:q.question,
+      question_title:"",
+      question_image:"",
+      wrong_answer_text:null,
+      right_answer_text:null,
+      question_hint:null,
+      explanation:"",
+      user_explanation:null,
+      type:"radio",
+      published:"1",
+      create_date:now,
+      not_influence_to_score:null,
+      weight:"1",
+      options:"",
+      tag_title:null,
+      category:slug,
+      answers,
+    };
+  });
+}
+
+function buildSlug(title,year){
+  const t=(title||'unknown').toLowerCase()
+    .replace(/[^a-z0-9\s]/g,'').trim()
+    .replace(/\s+/g,'-');
+  const y=(year||'').replace(/\s/g,'');
+  return y ? `${t}-${y}` : t;
+}
+
+// ════════════════════════════════════════════════════════
+//  PDF GENERATION
+// ════════════════════════════════════════════════════════
+async function downloadPDF(mode){
+  if(!verifiedData){ toast('No data yet — run extraction first','error'); return; }
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+
+  const university=extractedData?.courseUniversity||'';
+  const faculty=extractedData?.courseFaculty||'';
+  const department=extractedData?.courseDepartment||'';
+  const title=extractedData?.courseTitle||'Quiz';
+  const courseCode=extractedData?.courseCode||'';
+  const semester=extractedData?.courseSemester||'';
+  const year=extractedData?.courseYear||'';
+  const docTitle=extractedData?.docTitle||title;
+  const pageW=210; const pageH=297;
+  const margin=14; const contentW=pageW-margin*2;
+
+  // ── Colors (RGB) ──
+  const navy      =[8,12,28];
+  const navyCard  =[15,23,42];
+  const navyDeep  =[10,18,50];
+  const blue      =[45,126,255];
+  const cyan      =[0,212,255];
+  const white     =[240,244,255];
+  const whiteDim  =[138,153,187];
+  const green     =[34,197,94];
+  const greenDark =[20,55,28];
+  const expBg     =[10,18,50];
+  const tagBg     =[18,46,26];
+  const divider   =[30,42,75];
+
+  let y=0; let pageNum=1;
+
+  function st(text,maxW,fs,fw){
+    doc.setFont('helvetica',fw||'normal');
+    doc.setFontSize(fs);
+    return doc.splitTextToSize(String(text||''),maxW);
+  }
+
+  function addPage(){
+    drawFooter();
+    doc.addPage();
+    pageNum++;
+    y=drawHeader();
+    drawWatermark();
+  }
+
+  function checkY(need){ if(y+need>pageH-16){ addPage(); } }
+
+  function drawWatermark(){
+    doc.saveGraphicsState();
+    doc.setGState(new doc.GState({opacity:0.045}));
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(12);
+    doc.setTextColor(100,140,220);
+    for(let wy=-10;wy<310;wy+=15){
+      for(let wx=-20;wx<230;wx+=42){
+        doc.text('EDUGLOBALFORGE',wx,wy,{angle:28});
+      }
+    }
+    doc.restoreGraphicsState();
+  }
+
+  function drawHeader(){
+    // Full-width dark banner
+    doc.setFillColor(...navy);
+    doc.rect(0,0,pageW,20,'F');
+    // Blue bottom accent
+    doc.setFillColor(...blue);
+    doc.rect(0,19.5,pageW,1,'F');
+    // Brand name
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...cyan);
+    doc.text('EDUGLOBALFORGE',margin,12.5);
+    // Course info centered
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...whiteDim);
+    let cinfo=[university,faculty,department,courseCode,title].filter(Boolean).join(' · ');
+    const maxCW=pageW-margin*2-70;
+    while(doc.getStringUnitWidth(cinfo)*6.5/doc.internal.scaleFactor>maxCW && cinfo.length>8) cinfo=cinfo.slice(0,-1);
+    if(cinfo!==([university,faculty,department,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
+    doc.text(cinfo,pageW/2,12.5,{align:'center'});
+    // Page number
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...whiteDim);
+    doc.text(`Page ${pageNum}`,pageW-margin,12.5,{align:'right'});
+    return 26;
+  }
+
+  function drawFooter(){
+    doc.setFillColor(...navy);
+    doc.rect(0,pageH-10,pageW,10,'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6);
+    doc.setTextColor(...whiteDim);
+    doc.text('EDUGLOBALFORGE',pageW/2,pageH-3.5,{align:'center'});
+  }
+
+  // ── START ──
+  y=drawHeader();
+  drawWatermark();
+
+  // ── COVER INFO BLOCK ──
+  const coverRows=[];
+  if(university) coverRows.push({text:university, fs:11, fw:'bold', color:white});
+  if(faculty)    coverRows.push({text:faculty,    fs:8.5,fw:'normal',color:whiteDim});
+  if(department) coverRows.push({text:department, fs:8.5,fw:'normal',color:whiteDim});
+  const cline=[courseCode,title,semester,year].filter(Boolean).join(' · ');
+  if(cline)      coverRows.push({text:cline,      fs:8.5,fw:'bold', color:[100,170,255]});
+
+  if(coverRows.length){
+    const padT=7; const lh=6.2; const padB=6;
+    let wrapped=[];
+    coverRows.forEach(r=>{
+      st(r.text,contentW-20,r.fs,r.fw).forEach(l=>wrapped.push({...r,text:l}));
+    });
+    const bh=padT+wrapped.length*lh+padB;
+    doc.setFillColor(...navyCard);
+    doc.roundedRect(margin,y,contentW,bh,2,2,'F');
+    doc.setFillColor(...cyan);
+    doc.roundedRect(margin,y,3.5,bh,1.5,1.5,'F');
+    wrapped.forEach((r,i)=>{
+      doc.setFont('helvetica',r.fw);
+      doc.setFontSize(r.fs);
+      doc.setTextColor(...r.color);
+      doc.text(r.text,margin+10,y+padT+i*lh);
+    });
+    y+=bh+6;
+  }
+
+  // ── SECTION HEADER BADGE ──
+  const isAnswers=mode==='answers';
+  const badgeLabel=isAnswers?'QUESTIONS + ANSWERS + EXPLANATIONS':'QUESTIONS ONLY';
+  const badgeSub=`${verifiedData.length} Questions · ${courseCode?courseCode+' · ':''}${title}${year?' · '+year:''}`;
+  // Circle badge
+  const badgeR=5.5;
+  const badgeCx=margin+badgeR+1;
+  const badgeCy=y+9;
+  doc.setFillColor(...blue);
+  doc.circle(badgeCx,badgeCy,badgeR,'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(7);
+  doc.setTextColor(255,255,255);
+  doc.text(isAnswers?'2':'1',badgeCx,badgeCy+2.5,{align:'center'});
+  // Label
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...white);
+  doc.text(badgeLabel,margin+14,badgeCy+0.5);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...whiteDim);
+  doc.text(badgeSub,margin+14,badgeCy+6);
+  // Download badge pill (decorative, matches UI)
+  const pillTxt='Download PDF';
+  doc.setFillColor(...blue);
+  doc.roundedRect(margin+14,badgeCy+8.5,28,6,3,3,'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(7);
+  doc.setTextColor(255,255,255);
+  doc.text(pillTxt,margin+28,badgeCy+12.8,{align:'center'});
+  y=badgeCy+20;
+
+  // Horizontal divider
+  doc.setFillColor(...divider);
+  doc.rect(margin,y,contentW,0.5,'F');
+  y+=5;
+
+  // ── RENDER QUESTIONS ──
+  verifiedData.forEach((q,qi)=>{
+    const qNum=String(qi+1).padStart(2,'0');
+    const qTextMaxW=contentW-18;
+    const qLines=st(q.question,qTextMaxW,11,'bold');
+    const qBlockH=qLines.length*6.2+8;
+
+    // Options
+    const optMaxW=contentW-22;
+    const optLinesList=q.options.map(o=>st(`${o.label}.  ${o.text}`,optMaxW,10,'bold'));
+    const optHeights=optLinesList.map(ls=>ls.length*5.3+5);
+    const totalOptH=optHeights.reduce((a,b)=>a+b+1.5,0);
+
+    // Explanation & tag
+    let expLines=[],expH=0,tagLines=[],tagH=0;
+    if(isAnswers){
+      expLines=st(q.explanation,contentW-20,9,'normal');
+      expH=expLines.length*5.2+16;
+      tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-20,9,'bold');
+      tagH=tagLines.length*5+6;
+    }
+
+    const total=qBlockH+totalOptH+tagH+expH+10;
+    if(total<pageH-30 && y+total>pageH-16){ addPage(); }
+    else { checkY(qBlockH+6); }
+
+    // ── Question block ──
+    doc.setFillColor(...navyCard);
+    doc.roundedRect(margin,y,contentW,qBlockH,2,2,'F');
+    doc.setFillColor(...blue);
+    doc.roundedRect(margin,y,3,qBlockH,1.5,1.5,'F');
+    // Number in superscript style (small, dim)
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...whiteDim);
+    doc.text(qNum,margin+5.5,y+5.5);
+    // Question text
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...white);
+    qLines.forEach((ln,li)=>{
+      doc.text(ln,margin+10,y+6+li*6.2);
+    });
+    y+=qBlockH+2;
+
+    // ── Options ──
+    q.options.forEach((opt,oi)=>{
+      const isCorrect=isAnswers&&opt.label===q.correctLabel;
+      const lines=optLinesList[oi];
+      const oh=optHeights[oi];
+      checkY(oh+2);
+      if(isCorrect){
+        doc.setFillColor(...greenDark);
+        doc.roundedRect(margin+4,y-0.5,contentW-8,oh,1.5,1.5,'F');
+        doc.setFillColor(...green);
+        doc.roundedRect(margin+4,y-0.5,2.5,oh,1,1,'F');
+        doc.setFont('helvetica','bold');
+        doc.setTextColor(...green);
+      } else {
+        doc.setFont('helvetica','normal');
+        doc.setTextColor(...whiteDim);
+      }
+      doc.setFontSize(10);
+      lines.forEach((ln,li)=>{
+        doc.text(ln,margin+10,y+4.5+li*5.3);
+      });
+      y+=oh+1.5;
+    });
+
+    // ── Answer Tag ──
+    if(isAnswers){
+      y+=2;
+      checkY(tagH+expH+6);
+      // Green correct badge
+      doc.setFillColor(...tagBg);
+      doc.roundedRect(margin+4,y,contentW-8,tagH,2,2,'F');
+      doc.setFillColor(...green);
+      doc.roundedRect(margin+4,y,2.5,tagH,1,1,'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...green);
+      tagLines.forEach((ln,li)=>{
+        doc.text(ln,margin+9,y+5+li*5);
+      });
+      y+=tagH+2;
+
+      // ── Explanation ──
+      checkY(expH+2);
+      doc.setFillColor(...expBg);
+      doc.roundedRect(margin+4,y,contentW-8,expH,2,2,'F');
+      doc.setFillColor(...cyan);
+      doc.roundedRect(margin+4,y,2.5,expH,1,1,'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...cyan);
+      doc.text('EXPLANATION',margin+9,y+6);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(9);
+      doc.setTextColor(175,200,245);
+      expLines.forEach((ln,li)=>{
+        doc.text(ln,margin+9,y+12+li*5.2);
+      });
+      y+=expH+2;
+    }
+
+    // Divider between questions
+    doc.setFillColor(...divider);
+    doc.rect(margin,y+2,contentW,0.4,'F');
+    y+=7;
+  });
+
+  // ── FOOTER ON LAST PAGE ──
+  drawFooter();
+
+  const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),department.toUpperCase(),title,university.toUpperCase()];
+  const fnameBase=fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
+  const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
+  // Download via data URI injected into a hidden iframe to avoid:
+  // (a) DuckDuckGo browser's native "Save to Downloads" dialog (triggered by blob URL anchor clicks)
+  // (b) Blank-page navigation on Android WebView when anchor.click() fires on a detached element
+  const pdfDataUri=doc.output('datauristring');
+  try{
+    // Try the hidden-iframe approach first — works on Chrome, Firefox, most mobile browsers
+    const iframeId='__egf_pdf_dl_frame__';
+    let dlFrame=document.getElementById(iframeId);
+    if(!dlFrame){
+      dlFrame=document.createElement('iframe');
+      dlFrame.id=iframeId;
+      dlFrame.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;border:none;';
+      document.body.appendChild(dlFrame);
+    }
+    // Write a tiny auto-download page into the iframe
+    const iframeDoc=dlFrame.contentDocument||dlFrame.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(`<!DOCTYPE html><html><body><a id="dl" href="${pdfDataUri}" download="${fname.replace(/"/g,'&quot;')}"></a><script>document.getElementById('dl').click();<\/script></body></html>`);
+    iframeDoc.close();
+    toast(`PDF downloaded: ${fname}`,'success');
+  }catch(iframeErr){
+    // Fallback: data URI anchor click (works when iframe write is blocked by CSP)
+    try{
+      const dlLink=document.createElement('a');
+      dlLink.href=pdfDataUri;
+      dlLink.download=fname;
+      dlLink.style.display='none';
+      document.body.appendChild(dlLink);
+      dlLink.click();
+      setTimeout(()=>document.body.removeChild(dlLink),1000);
+      toast(`PDF downloaded: ${fname}`,'success');
+    }catch(anchorErr){
+      toast('Download failed — try a different browser','error');
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════
+//  JSON COPY / DOWNLOAD
+// ════════════════════════════════════════════════════════
+function copyJSON(){
+  if(!generatedJSON){ toast('No JSON yet — run extraction first','error'); return; }
+  navigator.clipboard.writeText(JSON.stringify(generatedJSON,null,2))
+    .then(()=>toast('JSON copied to clipboard','success'))
+    .catch(()=>toast('Copy failed — try the download button','error'));
+}
+function downloadJSON(){
+  if(!generatedJSON){ toast('No JSON yet — run extraction first','error'); return; }
+  const docTitle=extractedData?.docTitle||extractedData?.courseTitle||'quiz';
+  const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
+  const blob=new Blob([JSON.stringify(generatedJSON,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`${fnameBase}_quiz.json`;
+  a.click();
+  toast('JSON downloaded','success');
+}
+
+// ════════════════════════════════════════════════════════
+//  INITIAL PAINT — make the header pill reflect saved keys
+//  immediately on load/refresh, instead of staying stuck on
+//  "No key active" until Settings is opened for the first time.
+// ════════════════════════════════════════════════════════
+function initActiveKeyBannerOnLoad(){
+  // Re-anchor currentKeyIndex to a real record (if any) before painting,
+  // mirroring the same logic saveKeys() uses, so the pill and the
+  // rotation pointer agree right from page load.
+  const records=loadKeyRecords();
+  if(records.length===0){
+    currentKeyIndex=0;
+  } else if(currentKeyIndex<0||currentKeyIndex>=records.length){
+    currentKeyIndex=0;
+  }
+  renderActiveKeyBanner();
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',initActiveKeyBannerOnLoad);
+}else{
+  // DOM is already parsed (script sits at the end of <body>) — run right away
+  initActiveKeyBannerOnLoad();
+}
+
+</script>
+</div>
+</body>
+</html>
+
