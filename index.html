@@ -2177,10 +2177,8 @@ async function pqlGetOrCreateTermId(taxonomy, name) {
   const cacheKey = cleanName.toLowerCase();
   if (pqlTermCache[taxonomy][cacheKey]) return pqlTermCache[taxonomy][cacheKey];
 
-  // 1. Search for existing term
-  const searchRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`, {
-    headers: { 'Authorization': PQL_AUTH }
-  });
+  // 1. Search for existing term (no auth — public endpoint; auth causes 500 on this host)
+  const searchRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`);
   if (!searchRes.ok) {
     const text = await searchRes.text().catch(() => '');
     throw new Error(`Term search failed for ${taxonomy} (${searchRes.status}): ${text.slice(0, 200)}`);
