@@ -357,6 +357,12 @@
     border-radius:999px;padding:2px 9px;flex-shrink:0;display:none;
   }
   .key-row.is-active .key-row-active-pill{display:inline-block}
+  .key-eye-btn{
+    background:var(--navy-hover);border:1px solid var(--white-faint);border-radius:var(--radius-sm);
+    color:var(--white-dim);cursor:pointer;padding:5px 7px;display:flex;align-items:center;
+    transition:var(--transition);flex-shrink:0;
+  }
+  .key-eye-btn:hover{border-color:var(--blue);color:var(--blue)}
   .key-row-remove{
     background:none;border:none;color:var(--white-faint);cursor:pointer;
     font-size:15px;margin-left:auto;flex-shrink:0;transition:var(--transition);
@@ -738,46 +744,119 @@ let processingStage = 0;    // 0=fresh, 1=extracted, 2=verified
 const GEMINI_MODEL  = 'gemini-2.5-flash';
 
 // ════════════════════════════════════════════════════════
-//  API KEY MANAGEMENT — unlimited keys, live usage tracking
+//  API KEY MANAGEMENT — GitHub Gist persistent storage
 // ════════════════════════════════════════════════════════
-const KEYS_STORAGE   = 'egf_keys_v2';
 const QUOTA_STORAGE  = 'egf_daily_quota';
 const DEFAULT_QUOTA  = 250;
+const GITHUB_TOKEN   = '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';
+const GIST_FILENAME  = 'egf_api_keys.json';
+let   gistId         = localStorage.getItem('egf_gist_id') || null;
 
-// Each stored key record: { id, label, key, count, windowStart }
-// "windowStart" is the timestamp the current 24h usage window began.
-// Usage auto-resets once 24h have passed since windowStart.
-
-function loadKeyRecords(){
-  let records=[];
-  try{ records=JSON.parse(localStorage.getItem(KEYS_STORAGE)||'[]'); }catch(_){ records=[]; }
-
-  // Migrate legacy egf_key0..3 slots (one-time, silent) if v2 storage is empty
-  if(records.length===0){
-    const legacyLabels=['Your Key',"Bro's Key","Sis's Key","Babe's Key"];
-    ['key0','key1','key2','key3'].forEach((k,i)=>{
-      const v=localStorage.getItem('egf_'+k);
-      if(v){
-        records.push({id:'k'+Date.now()+i,label:legacyLabels[i],key:v,count:0,windowStart:Date.now()});
-        localStorage.removeItem('egf_'+k);
-      }
-    });
-    if(records.length) saveKeyRecords(records);
+// ── Gist helpers ──
+async function gistFetch(method, body){
+  const url = gistId
+    ? `https://api.github.com/gists/${gistId}`
+    : 'https://api.github.com/gists';
+  const res = await fetch(url, {
+    method,
+    headers:{
+      'Authorization': `token ${GITHUB_TOKEN}`,
+      'Content-Type':  'application/json',
+      'Accept':        'application/vnd.github.v3+json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const t=await res.text().catch(()=>'');
+    throw new Error(`GitHub Gist error (${res.status}): ${t.slice(0,200)}`);
   }
+  return res.json();
+}
 
-  // Reset usage windows that have expired (24h elapsed)
+async function gistLoad(){
+  // If we have a stored gistId, fetch it. Otherwise search user's gists for ours.
+  try{
+    if(gistId){
+      const data = await gistFetch('GET');
+      const content = data.files?.[GIST_FILENAME]?.content;
+      if(content) return JSON.parse(content);
+    } else {
+      // Search existing gists for our filename
+      const list = await fetch('https://api.github.com/gists?per_page=100',{
+        headers:{'Authorization':`token ${GITHUB_TOKEN}`,'Accept':'application/vnd.github.v3+json'}
+      }).then(r=>r.json());
+      const found = list.find && list.find(g => g.files && g.files[GIST_FILENAME]);
+      if(found){
+        gistId = found.id;
+        localStorage.setItem('egf_gist_id', gistId);
+        const data = await gistFetch('GET');
+        const content = data.files?.[GIST_FILENAME]?.content;
+        if(content) return JSON.parse(content);
+      }
+    }
+  }catch(e){ console.warn('[gist] load error:', e.message); }
+  return null; // not found yet
+}
+
+async function gistSave(payload){
+  const content = JSON.stringify(payload, null, 2);
+  const body = { description:'EduGlobalForge API Keys', public:false, files:{ [GIST_FILENAME]:{ content } } };
+  if(gistId){
+    // Update existing gist
+    await gistFetch('PATCH', body);
+  } else {
+    // Create new gist
+    const data = await gistFetch('POST', body);
+    gistId = data.id;
+    localStorage.setItem('egf_gist_id', gistId);
+  }
+}
+
+// ── In-memory key records (source of truth at runtime) ──
+let _keyRecords = [];
+
+async function initKeyRecords(){
+  // Try loading from Gist first
+  let loaded = await gistLoad();
+  if(loaded && loaded.records){
+    _keyRecords = loaded.records;
+    if(loaded.quota) localStorage.setItem(QUOTA_STORAGE, String(loaded.quota));
+  } else {
+    // Fall back to localStorage (migration from old storage)
+    let legacy=[];
+    try{ legacy=JSON.parse(localStorage.getItem('egf_keys_v2')||'[]'); }catch(_){}
+    if(legacy.length===0){
+      const legacyLabels=['Your Key',"Bro's Key","Sis's Key","Babe's Key"];
+      ['key0','key1','key2','key3'].forEach((k,i)=>{
+        const v=localStorage.getItem('egf_'+k);
+        if(v) legacy.push({id:'k'+Date.now()+i,label:legacyLabels[i],key:v,count:0,windowStart:Date.now()});
+      });
+    }
+    _keyRecords = legacy;
+    // Push whatever we found up to Gist immediately
+    if(_keyRecords.length) await gistSave({records:_keyRecords, quota:getDailyQuota()}).catch(()=>{});
+  }
+  // Reset expired usage windows
   const now=Date.now();
   let changed=false;
-  records.forEach(r=>{
+  _keyRecords.forEach(r=>{
     if(!r.windowStart){ r.windowStart=now; changed=true; }
     if(now-r.windowStart>=86400000){ r.count=0; r.windowStart=now; changed=true; }
   });
-  if(changed) saveKeyRecords(records);
-  return records;
+  if(changed) await persistKeyRecords();
+  renderActiveKeyBanner();
+  updateKeyStatus();
 }
-function saveKeyRecords(records){
-  localStorage.setItem(KEYS_STORAGE,JSON.stringify(records));
+
+async function persistKeyRecords(){
+  // Save to both Gist (permanent) and localStorage (fast fallback)
+  localStorage.setItem('egf_keys_v2', JSON.stringify(_keyRecords));
+  await gistSave({records:_keyRecords, quota:getDailyQuota()}).catch(e=>console.warn('[gist] save error:',e.message));
 }
+
+function loadKeyRecords(){ return _keyRecords; }
+function saveKeyRecords(records){ _keyRecords=records; persistKeyRecords(); }
+
 function getDailyQuota(){
   const v=parseInt(localStorage.getItem(QUOTA_STORAGE),10);
   return (Number.isFinite(v)&&v>0)?v:DEFAULT_QUOTA;
@@ -786,12 +865,11 @@ function setDailyQuota(v){
   localStorage.setItem(QUOTA_STORAGE,String(v));
 }
 function getKeys(){
-  return loadKeyRecords().map(r=>r.key).filter(Boolean);
+  return _keyRecords.map(r=>r.key).filter(Boolean);
 }
 function recordKeyUsage(apiKey){
-  const records=loadKeyRecords();
-  const rec=records.find(r=>r.key===apiKey);
-  if(rec){ rec.count=(rec.count||0)+1; saveKeyRecords(records); }
+  const rec=_keyRecords.find(r=>r.key===apiKey);
+  if(rec){ rec.count=(rec.count||0)+1; persistKeyRecords(); }
   renderActiveKeyBanner();
 }
 
@@ -810,6 +888,7 @@ function renderKeySlots(){
     const pct=Math.min(100,Math.round(((rec.count||0)/quota)*100));
     const barColor=pct>=90?'var(--red)':pct>=60?'var(--gold)':'var(--green)';
     const isActive=idx===currentKeyIndex%Math.max(modalKeyDraft.length,1);
+    const rowId='keyrow_'+idx;
     const row=document.createElement('div');
     row.className='key-row'+(isActive?' is-active':'');
     row.innerHTML=`
@@ -818,7 +897,13 @@ function renderKeySlots(){
         <span class="key-row-active-pill">ACTIVE NOW</span>
         <button class="key-row-remove" type="button" data-idx="${idx}" title="Remove key">✕</button>
       </div>
-      <input type="password" value="${escAttr(rec.key)}" placeholder="AIza..." data-field="key" data-idx="${idx}"/>
+      <div style="position:relative;display:flex;align-items:center;gap:6px">
+        <input type="password" id="${rowId}_input" value="${escAttr(rec.key)}" placeholder="AIza..." data-field="key" data-idx="${idx}" style="flex:1"/>
+        <button type="button" class="key-eye-btn" data-target="${rowId}_input" title="Show/hide key">
+          <svg id="${rowId}_eye_show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:block"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg id="${rowId}_eye_hide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
       <div class="key-row-usage">
         <div class="key-row-usage-track"><div class="key-row-usage-fill" style="width:${pct}%;background:${barColor}"></div></div>
         <span class="key-row-usage-label">${rec.count||0} / ${quota} today (${pct}%)</span>
@@ -838,6 +923,23 @@ function renderKeySlots(){
       renderKeySlots();
     });
   });
+  // Eye toggle buttons
+  container.querySelectorAll('.key-eye-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const inp=document.getElementById(btn.dataset.target);
+      const showIcon=document.getElementById(btn.dataset.target.replace('_input','_eye_show'));
+      const hideIcon=document.getElementById(btn.dataset.target.replace('_input','_eye_hide'));
+      if(inp.type==='password'){
+        inp.type='text';
+        showIcon.style.display='none';
+        hideIcon.style.display='block';
+      } else {
+        inp.type='password';
+        showIcon.style.display='block';
+        hideIcon.style.display='none';
+      }
+    });
+  });
 }
 function escAttr(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -847,29 +949,22 @@ function addKeySlot(){
   renderKeySlots();
 }
 function loadKeysIntoModal(){
-  // Deep copy current saved records into the draft so edits don't leak until Save
-  modalKeyDraft=loadKeyRecords().map(r=>({...r}));
+  modalKeyDraft=_keyRecords.map(r=>({...r}));
   document.getElementById('dailyQuotaInput').value=getDailyQuota();
   renderKeySlots();
 }
-function saveKeys(){
+async function saveKeys(){
   const quotaVal=parseInt(document.getElementById('dailyQuotaInput').value,10);
   if(Number.isFinite(quotaVal)&&quotaVal>0) setDailyQuota(quotaVal);
 
-  // Remember which key (by value, not index) was active before this save
-  const prevRecords=loadKeyRecords();
-  const prevActiveKey=prevRecords.length?prevRecords[currentKeyIndex%prevRecords.length].key:null;
+  const prevActiveKey=_keyRecords.length?_keyRecords[currentKeyIndex%_keyRecords.length].key:null;
 
-  // Drop fully-empty rows, keep usage counters for rows that already existed
   const cleaned=modalKeyDraft
     .filter(r=>r.key&&r.key.trim())
     .map(r=>({id:r.id,label:(r.label||'Key').trim()||'Key',key:r.key.trim(),count:r.count||0,windowStart:r.windowStart||Date.now()}));
 
-  saveKeyRecords(cleaned);
+  _keyRecords=cleaned;
 
-  // Re-anchor the active pointer to the SAME key as before (if it still exists),
-  // instead of trusting the old index — which would point at the wrong key
-  // after a removal/reorder.
   if(cleaned.length===0){
     currentKeyIndex=0;
   } else {
@@ -877,14 +972,26 @@ function saveKeys(){
     currentKeyIndex=sameKeyIdx!==-1?sameKeyIdx:0;
   }
 
+  // Save to Gist + localStorage
+  const saveBtn=document.querySelector('#settingsModal .btn-primary');
+  if(saveBtn){ saveBtn.disabled=true; saveBtn.textContent='Saving…'; }
+  try{
+    await persistKeyRecords();
+    toast(`${cleaned.length} key${cleaned.length===1?'':'s'} saved to GitHub`,'success');
+  }catch(e){
+    toast('Saved locally — Gist sync failed: '+e.message,'error');
+  }finally{
+    if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='Save Keys'; }
+  }
+
   updateKeyStatus();
   renderActiveKeyBanner();
   closeSettings();
-  toast(`${cleaned.length} key${cleaned.length===1?'':'s'} saved`,'success');
 }
 function updateKeyStatus(){
   const keys=getKeys();
   const el=document.getElementById('keyStatusText');
+  if(!el) return;
   if(keys.length===0) el.textContent='No keys saved yet — paste at least one key above.';
   else el.textContent=`${keys.length} key${keys.length>1?'s':''} saved. Currently using key ${currentKeyIndex+1} of ${keys.length}.`;
 }
@@ -893,7 +1000,7 @@ function renderActiveKeyBanner(){
   const subEl=document.getElementById('activeKeySub');
   const pillEl=document.getElementById('headerKeyPill');
   const pillTextEl=document.getElementById('headerKeyPillText');
-  const records=loadKeyRecords();
+  const records=_keyRecords;
 
   if(records.length===0){
     if(titleEl) titleEl.textContent='No key active yet';
@@ -918,7 +1025,6 @@ function renderActiveKeyBanner(){
     pillTextEl.textContent=`${rec.label} · ${pct}% used (${idx+1}/${records.length})`;
   }
 
-  // Re-render slot list too, in case the modal is open, so the bars stay live
   if(modalKeyDraft.length) renderKeySlots();
 }
 function openSettings(){ loadKeysIntoModal(); updateKeyStatus(); renderActiveKeyBanner(); document.getElementById('settingsModal').classList.add('open'); document.body.classList.add('modal-open'); }
@@ -2065,8 +2171,7 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
 // ════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════
-updateKeyStatus();
-renderActiveKeyBanner();
+initKeyRecords().catch(e=>{ console.warn('[init] key load failed:',e.message); renderActiveKeyBanner(); updateKeyStatus(); });
 </script>
 <script>
 /* ── WPDM Push (inlined) ── */
@@ -2235,121 +2340,4 @@ async function pqlGetOrCreateTermId(taxonomy, name) {
     const existingLower = (t.name || '').trim().toLowerCase();
     return existingLower.includes(cacheKey) || cacheKey.includes(existingLower);
   });
-  if (fuzzy) {
-    pqlTermCache[taxonomy][cacheKey] = fuzzy.id;
-    return fuzzy.id;
-  }
-
-  // 2. Create term if no match found
-  const createRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
-    body: JSON.stringify({ name: cleanName })
-  });
-  if (!createRes.ok) {
-    const text = await createRes.text().catch(() => '');
-    throw new Error(`Term creation failed for ${taxonomy} "${cleanName}" (${createRes.status}): ${text.slice(0, 200)}`);
-  }
-  const created = await createRes.json();
-  pqlTermCache[taxonomy][cacheKey] = created.id;
-  return created.id;
-}
-
-function pqlDeriveLevel(courseCode) {
-  const match = (courseCode || '').match(/(\d)\d{2,}/);
-  if (!match) return null;
-  return `${match[1]}00 Level`;
-}
-
-function pqlBuildTitle() {
-  const code = extractedData?.courseCode || '';
-  const uni  = extractedData?.courseUniversity || '';
-  const fac  = extractedData?.courseFaculty || '';
-  const lvl  = pqlDeriveLevel(code) || '';
-  const sem  = extractedData?.courseSemester || '';
-  return `${code} – ${uni} – ${fac} – ${lvl} – ${sem} – Past Questions`.replace(/\s*–\s*–/g, ' –').trim();
-}
-
-async function publishPqListing(qUrl, aUrl, basePrice) {
-  const courseCode  = extractedData?.courseCode || '';
-  const courseTitle = extractedData?.courseTitle || '';
-  const university  = extractedData?.courseUniversity || '';
-  const faculty     = extractedData?.courseFaculty || '';
-  const semester    = extractedData?.courseSemester || '';
-  const year         = extractedData?.courseYear || '';
-  const level        = pqlDeriveLevel(courseCode);
-
-  const [questionTypeId, semesterId, yearId, levelId, facultyId, universityId] = await Promise.all([
-    pqlGetOrCreateTermId('question-type', 'Obj'),
-    pqlGetOrCreateTermId('semester', semester),
-    pqlGetOrCreateTermId('session-year', year),
-    pqlGetOrCreateTermId('level', level),
-    pqlGetOrCreateTermId('faculty', faculty),
-    pqlGetOrCreateTermId('university', university)
-  ]);
-
-  const body = {
-    title: pqlBuildTitle(),
-    status: 'publish',
-    meta: {
-      course_code: courseCode,
-      course_title: courseTitle,
-      file_format: 'PDF',
-      is_solved_answers_included: 'Both',
-      questions_only_wpdm_link: qUrl,
-      pq_with_answers_edd_link: aUrl,
-      price_for_pq_with_answers_wpdm: String(basePrice)
-    },
-    'question-type': questionTypeId ? [questionTypeId] : [],
-    'semester': semesterId ? [semesterId] : [],
-    'session-year': yearId ? [yearId] : [],
-    'level': levelId ? [levelId] : [],
-    'faculty': facultyId ? [facultyId] : [],
-    'university': universityId ? [universityId] : []
-  };
-
-  const res = await fetch(`${PQL_SITE}/wp-json/wp/v2/${PQL_POST_TYPE}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`PQ Listing publish failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-  return res.json();
-}
-
-function initPqListingButton(qUrl, aUrl, basePrice) {
-  const existing = document.getElementById('pqlPublishBtn');
-  if (existing) existing.remove();
-
-  const wpdmBtn = document.getElementById('wpdmPushBtn');
-  const jumpNav = document.getElementById('jumpNav');
-  const container = jumpNav || (wpdmBtn ? wpdmBtn.parentNode : null);
-  if (!container) {
-    console.error('[pql] DOM anchor missing');
-    return;
-  }
-
-  const btn = document.createElement('button');
-  btn.id        = 'pqlPublishBtn';
-  btn.className = 'jump-btn';
-  btn.innerHTML = '<span class="jump-dot" style="background:#fbbf24"></span> Publish PQ Listing';
-  btn.onclick = async () => {
-    btn.disabled = true;
-    btn.innerHTML = '📝 Publishing listing…';
-    try {
-      const result = await publishPqListing(qUrl, aUrl, basePrice);
-      btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Listing Published!';
-      btn.disabled = false;
-      toast(`PQ Listing published!\n${result.title?.rendered || result.title || 'View on site'}\n${result.link || ''}`, 'success');
-    } catch (err) {
-      console.error('[pql] failed:', err);
-      btn.innerHTML = '<span class="jump-dot" style="background:#fbbf24"></span> Publish PQ Listing';
-      btn.disabled = false;
-      toast(`PQ Listing publish failed: ${err.message}`, 'error');
-    }
-  };
-  container.appendChild(btn);
-  c
+  if (fuz
