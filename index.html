@@ -2145,6 +2145,7 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
       btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
       btn.disabled = false;
       toast(`WPDM packages created!\n• ${qPkg.title || qResult.name}\n• ${aPkg.title || aResult.name}`, 'success');
+      initPqListingButton(qUrl, aUrl, 200);
     } catch (err) {
       console.error('[wpdm] failed:', err);
       btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
@@ -2155,6 +2156,155 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
   const container = jumpNav || driveBtn.parentNode;
   container.appendChild(btn);
   console.log('[wpdm] Button injected into', container.id);
+}
+</script>
+<script>
+/* ── PQ Listing Publish (inlined) ── */
+const PQL_SITE      = 'https://eduglobalforge.com/pastquestions';
+const PQL_POST_TYPE = 'uni_pq_download';
+const PQL_WP_USER   = 'testblog';
+const PQL_WP_APP_PW = '1GTK Tb1w herl 3lqC 5auj pNzW';
+const PQL_AUTH       = 'Basic ' + btoa(`${PQL_WP_USER}:${PQL_WP_APP_PW}`);
+
+const PQL_TAXONOMIES = ['question-type','semester','session-year','level','faculty','university'];
+const pqlTermCache = {}; // taxonomy -> { lowercaseName: id }
+
+async function pqlGetOrCreateTermId(taxonomy, name) {
+  const cleanName = (name || '').trim();
+  if (!cleanName) return null;
+
+  if (!pqlTermCache[taxonomy]) pqlTermCache[taxonomy] = {};
+  const cacheKey = cleanName.toLowerCase();
+  if (pqlTermCache[taxonomy][cacheKey]) return pqlTermCache[taxonomy][cacheKey];
+
+  // 1. Search for existing term
+  const searchRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}?search=${encodeURIComponent(cleanName)}&per_page=100`, {
+    headers: { 'Authorization': PQL_AUTH }
+  });
+  if (!searchRes.ok) {
+    const text = await searchRes.text().catch(() => '');
+    throw new Error(`Term search failed for ${taxonomy} (${searchRes.status}): ${text.slice(0, 200)}`);
+  }
+  const matches = await searchRes.json();
+  const exact = matches.find(t => (t.name || '').trim().toLowerCase() === cacheKey);
+  if (exact) {
+    pqlTermCache[taxonomy][cacheKey] = exact.id;
+    return exact.id;
+  }
+
+  // 2. Create term if no exact match
+  const createRes = await fetch(`${PQL_SITE}/wp-json/wp/v2/${taxonomy}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
+    body: JSON.stringify({ name: cleanName })
+  });
+  if (!createRes.ok) {
+    const text = await createRes.text().catch(() => '');
+    throw new Error(`Term creation failed for ${taxonomy} "${cleanName}" (${createRes.status}): ${text.slice(0, 200)}`);
+  }
+  const created = await createRes.json();
+  pqlTermCache[taxonomy][cacheKey] = created.id;
+  return created.id;
+}
+
+function pqlDeriveLevel(courseCode) {
+  const match = (courseCode || '').match(/(\d)\d{2,}/);
+  if (!match) return null;
+  return `${match[1]}00 Level`;
+}
+
+function pqlBuildTitle() {
+  const code = extractedData?.courseCode || '';
+  const uni  = extractedData?.courseUniversity || '';
+  const fac  = extractedData?.courseFaculty || '';
+  const lvl  = pqlDeriveLevel(code) || '';
+  const sem  = extractedData?.courseSemester || '';
+  return `${code} – ${uni} – ${fac} – ${lvl} – ${sem} – Past Questions`.replace(/\s*–\s*–/g, ' –').trim();
+}
+
+async function publishPqListing(qUrl, aUrl, basePrice) {
+  const courseCode  = extractedData?.courseCode || '';
+  const courseTitle = extractedData?.courseTitle || '';
+  const university  = extractedData?.courseUniversity || '';
+  const faculty     = extractedData?.courseFaculty || '';
+  const semester    = extractedData?.courseSemester || '';
+  const year         = extractedData?.courseYear || '';
+  const level        = pqlDeriveLevel(courseCode);
+
+  const [questionTypeId, semesterId, yearId, levelId, facultyId, universityId] = await Promise.all([
+    pqlGetOrCreateTermId('question-type', 'Obj'),
+    pqlGetOrCreateTermId('semester', semester),
+    pqlGetOrCreateTermId('session-year', year),
+    pqlGetOrCreateTermId('level', level),
+    pqlGetOrCreateTermId('faculty', faculty),
+    pqlGetOrCreateTermId('university', university)
+  ]);
+
+  const body = {
+    title: pqlBuildTitle(),
+    status: 'publish',
+    meta: {
+      course_code: courseCode,
+      course_title: courseTitle,
+      file_format: 'PDF',
+      is_solved_answers_included: 'Both',
+      questions_only_wpdm_link: qUrl,
+      pq_with_answers_edd_link: aUrl,
+      price_for_pq_with_answers_wpdm: String(basePrice)
+    },
+    'question-type': questionTypeId ? [questionTypeId] : [],
+    'semester': semesterId ? [semesterId] : [],
+    'session-year': yearId ? [yearId] : [],
+    'level': levelId ? [levelId] : [],
+    'faculty': facultyId ? [facultyId] : [],
+    'university': universityId ? [universityId] : []
+  };
+
+  const res = await fetch(`${PQL_SITE}/wp-json/wp/v2/${PQL_POST_TYPE}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': PQL_AUTH },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`PQ Listing publish failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+function initPqListingButton(qUrl, aUrl, basePrice) {
+  const existing = document.getElementById('pqlPublishBtn');
+  if (existing) existing.remove();
+
+  const wpdmBtn = document.getElementById('wpdmPushBtn');
+  const jumpNav = document.getElementById('jumpNav');
+  const container = jumpNav || (wpdmBtn ? wpdmBtn.parentNode : null);
+  if (!container) {
+    console.error('[pql] DOM anchor missing');
+    return;
+  }
+
+  const btn = document.createElement('button');
+  btn.id        = 'pqlPublishBtn';
+  btn.className = 'jump-btn';
+  btn.innerHTML = '<span class="jump-dot" style="background:#fbbf24"></span> Publish PQ Listing';
+  btn.onclick = async () => {
+    btn.disabled = true;
+    btn.innerHTML = '📝 Publishing listing…';
+    try {
+      const result = await publishPqListing(qUrl, aUrl, basePrice);
+      btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Listing Published!';
+      btn.disabled = false;
+      toast(`PQ Listing published!\n${result.title?.rendered || result.title || 'View on site'}\n${result.link || ''}`, 'success');
+    } catch (err) {
+      console.error('[pql] failed:', err);
+      btn.innerHTML = '<span class="jump-dot" style="background:#fbbf24"></span> Publish PQ Listing';
+      btn.disabled = false;
+      toast(`PQ Listing publish failed: ${err.message}`, 'error');
+    }
+  };
+  container.appendChild(btn);
+  console.log('[pql] Button injected into', container.id);
 }
 </script>
 <script src="drive-push.js"></script>
