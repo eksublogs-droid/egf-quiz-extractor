@@ -54,13 +54,38 @@ export default async function handler(req, res) {
         // fall through to search/create if the saved id is no longer valid
       }
 
-      const listRes = await fetch(`${GITHUB_API}/gists`, { headers: ghHeaders(GIST_SYNC_TOKEN) });
-      if (!listRes.ok) {
-        res.status(listRes.status).json({ error: `GitHub error listing gists (${listRes.status})` });
-        return;
+      // GitHub's /gists endpoint defaults to 30 results per page, and every
+      // gist this app creates shares the same description — so duplicates
+      // from earlier testing can outrank (or hide) the real one. Collect
+      // every matching gist, then inspect their actual content and pick
+      // whichever one genuinely holds encrypted data, instead of just
+      // grabbing whichever happens to be listed first.
+      let candidates = [];
+      for (let page = 1; page <= 5; page++) {
+        const listRes = await fetch(`${GITHUB_API}/gists?per_page=100&page=${page}`, { headers: ghHeaders(GIST_SYNC_TOKEN) });
+        if (!listRes.ok) {
+          res.status(listRes.status).json({ error: `GitHub error listing gists (${listRes.status})` });
+          return;
+        }
+        const gists = await listRes.json();
+        if (!gists.length) break; // no more pages
+        candidates.push(...gists.filter(g => g.description === GIST_DESC && g.files && g.files[GIST_FILENAME]));
+        if (gists.length < 100) break; // last page
       }
-      const gists = await listRes.json();
-      const match = gists.find(g => g.description === GIST_DESC && g.files && g.files[GIST_FILENAME]);
+
+      let match = null;
+      for (const candidate of candidates.slice(0, 20)) {
+        const r = await fetch(`${GITHUB_API}/gists/${candidate.id}`, { headers: ghHeaders(GIST_SYNC_TOKEN) });
+        if (!r.ok) continue;
+        const full = await r.json();
+        const file = full.files && full.files[GIST_FILENAME];
+        if (!file || !file.content) continue;
+        try {
+          const parsed = JSON.parse(file.content);
+          if (parsed && parsed.data) { match = candidate; break; } // first one (most recently updated) with real data
+        } catch (_) { /* not valid JSON, skip */ }
+      }
+      if (!match && candidates.length) match = candidates[0]; // no real data anywhere — reuse rather than create another duplicate
       if (match) {
         res.status(200).json({ gistId: match.id });
         return;
@@ -122,5 +147,4 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unexpected error during gist sync' });
   }
-          }
-        
+}
