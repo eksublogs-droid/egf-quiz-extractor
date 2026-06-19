@@ -343,7 +343,14 @@
   .token-status-line.error{color:var(--red)}
   .token-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
   .input-with-eye{position:relative;display:flex;align-items:center}
-  .input-with-eye input{padding-right:38px;width:100%}
+  .input-with-eye input{
+    padding-right:38px;width:100%;
+    background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding-top:10px;padding-bottom:10px;padding-left:14px;
+    color:var(--white);font-family:var(--font-body);font-size:14px;
+    transition:var(--transition);outline:none;
+  }
+  .input-with-eye input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
   .eye-toggle{
     position:absolute;right:6px;top:50%;transform:translateY(-50%);
     background:none;border:none;color:var(--white-dim);cursor:pointer;
@@ -387,13 +394,21 @@
     font-size:15px;margin-left:auto;flex-shrink:0;transition:var(--transition);
   }
   .key-row-remove:hover{color:var(--red)}
-  .key-row input[type="password"]{
+  .key-row input[type="password"],.key-row input[type="text"].key-row-key-input{
     width:100%;background:var(--navy-hover);border:1px solid var(--white-faint);
-    border-radius:var(--radius-sm);padding:9px 14px;
+    border-radius:var(--radius-sm);padding:9px 38px 9px 14px;
     color:var(--white);font-family:var(--font-mono);font-size:13px;
-    transition:var(--transition);outline:none;margin-bottom:8px;
+    transition:var(--transition);outline:none;
   }
-  .key-row input[type="password"]:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row input[type="password"]:focus,.key-row input[type="text"].key-row-key-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .key-row-key-wrap{position:relative;margin-bottom:8px}
+  .key-row-eye{
+    position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:var(--white-dim);cursor:pointer;
+    padding:5px;display:flex;align-items:center;border-radius:5px;
+    transition:var(--transition);
+  }
+  .key-row-eye:hover{color:var(--blue-bright);background:var(--blue-glow)}
   .key-row-usage{display:flex;align-items:center;gap:9px}
   .key-row-usage-track{
     flex:1;height:6px;border-radius:999px;background:var(--white-faint);
@@ -737,6 +752,10 @@
           </button>
         </div>
       </div>
+      <button class="btn btn-secondary btn-block" id="retrieveKeysBtn" onclick="retrieveKeysFromPassphrase()" style="margin-top:10px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        Retrieve Keys
+      </button>
       <div id="tokenStatusLine" class="token-status-line">
         <div class="token-dot"></div>
         <span id="tokenStatusText">No passphrase set — nothing leaves this device.</span>
@@ -872,7 +891,12 @@ function renderKeySlots(){
         <span class="key-row-active-pill">ACTIVE NOW</span>
         <button class="key-row-remove" type="button" data-idx="${idx}" title="Remove key">✕</button>
       </div>
-      <input type="password" value="${escAttr(rec.key)}" placeholder="AIza..." data-field="key" data-idx="${idx}"/>
+      <div class="key-row-key-wrap">
+        <input type="password" class="key-row-key-input" value="${escAttr(rec.key)}" placeholder="AIza..." data-field="key" data-idx="${idx}"/>
+        <button class="key-row-eye" type="button" data-idx="${idx}" title="Show/hide key" aria-label="Show or hide API key">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
       <div class="key-row-usage">
         <div class="key-row-usage-track"><div class="key-row-usage-fill" style="width:${pct}%;background:${barColor}"></div></div>
         <span class="key-row-usage-label">${rec.count||0} / ${quota} today (${pct}%)</span>
@@ -890,6 +914,14 @@ function renderKeySlots(){
     el.addEventListener('click',e=>{
       modalKeyDraft.splice(+e.target.dataset.idx,1);
       renderKeySlots();
+    });
+  });
+  container.querySelectorAll('.key-row-eye').forEach(el=>{
+    el.addEventListener('click',e=>{
+      const btn=e.currentTarget;
+      const input=btn.previousElementSibling;
+      if(!input) return;
+      input.type = input.type==='password' ? 'text' : 'password';
     });
   });
 }
@@ -980,6 +1012,46 @@ function setTokenStatus(text,state){
   if(!line||!txt) return;
   txt.textContent=text;
   line.className='token-status-line'+(state?' '+state:'');
+}
+// Manual pull: takes whatever passphrase is currently typed in the field,
+// fetches the encrypted blob, decrypts it, and merges the keys into the
+// modal draft immediately — without requiring a Save + reopen round trip.
+async function retrieveKeysFromPassphrase(){
+  const passphrase=document.getElementById('syncPassphrase').value.trim();
+  if(!passphrase){
+    setTokenStatus('Type a passphrase above first.','error');
+    return;
+  }
+  const btn=document.getElementById('retrieveKeysBtn');
+  if(btn) btn.disabled=true;
+  setTokenStatus('Retrieving synced keys...','');
+  try{
+    const gistId=await findOrCreateSyncGist();
+    const blob=await fetchSyncBlob(gistId);
+    if(!blob){
+      setTokenStatus('No synced data found for this passphrase yet.','error');
+      return;
+    }
+    const payload=await decryptPayload(blob, passphrase);
+    const merged=applySyncPayload(payload, loadKeyRecords());
+    if(!merged.length){
+      setTokenStatus('Synced blob was empty — nothing to retrieve.','error');
+      return;
+    }
+    modalKeyDraft=merged;
+    renderKeySlots();
+    saveKeyRecords(merged);
+    setPassphrase(passphrase);
+    currentKeyIndex=0;
+    updateKeyStatus();
+    renderActiveKeyBanner();
+    setTokenStatus('Retrieved — this passphrase will pull everything on any browser.','connected');
+    toast(`${merged.length} key${merged.length===1?'':'s'} retrieved`,'success');
+  }catch(e){
+    setTokenStatus('Retrieve failed: '+e.message+' (wrong passphrase?)','error');
+  }finally{
+    if(btn) btn.disabled=false;
+  }
 }
 // What actually gets synced: Gemini keys + WP credentials, bundled together.
 function buildSyncPayload(records){
@@ -1117,7 +1189,14 @@ async function openSettings(){
       if(blob){
         const payload=await decryptPayload(blob, passphrase);
         const merged=applySyncPayload(payload, loadKeyRecords());
-        if(merged.length){ modalKeyDraft=merged; renderKeySlots(); }
+        if(merged.length){
+          modalKeyDraft=merged;
+          renderKeySlots();
+          saveKeyRecords(merged);
+          currentKeyIndex=0;
+          updateKeyStatus();
+          renderActiveKeyBanner();
+        }
       }
       setTokenStatus('Synced — this passphrase will pull everything on any browser.','connected');
     }catch(e){
@@ -2246,9 +2325,8 @@ function downloadJSON(){
   a.download=`${fnameBase}_quiz.json`;
   a.click();
   toast('JSON downloaded','success');
-}
-</script>
+  }
+  </script>
 </div>
 </body>
 </html>
-
