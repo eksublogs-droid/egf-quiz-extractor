@@ -911,13 +911,14 @@ function toggleEye(inputId){
 
 // ════════════════════════════════════════════════════════
 //  ENCRYPTED CROSS-DEVICE SYNC (passphrase-based, optional)
-//  A single fixed, low-privilege GitHub token (gist scope ONLY, on a
-//  throwaway account with no other access) reads/writes one PRIVATE gist.
-//  The gist content itself is encrypted client-side with AES-GCM, using a
-//  key derived from the user's passphrase via PBKDF2. The fixed token can
-//  only ever read/write this one gist's ciphertext — it cannot decrypt it.
+//  All GitHub Gist calls go through /api/gist-sync, a Vercel serverless
+//  function that holds the GitHub token server-side (env var
+//  GIST_SYNC_TOKEN). The token is never present in this file or shipped
+//  to the browser. The gist content itself is encrypted client-side with
+//  AES-GCM, using a key derived from the user's passphrase via PBKDF2 —
+//  the token can only ever read/write this one gist's ciphertext, it
+//  cannot decrypt it.
 // ════════════════════════════════════════════════════════
-const FIXED_GIST_TOKEN = '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'; // gist-scope only, throwaway account
 const LS_GIST_ID    = 'egf_sync_gist_id';
 const LS_PASSPHRASE = 'egf_sync_passphrase'; // remembered locally so you don't retype it every open
 const GIST_FILENAME = 'eduglobalforge-sync.json';
@@ -937,10 +938,6 @@ function getWpUser(){ return localStorage.getItem(LS_WP_USER)||''; }
 function setWpUser(u){ if(u) localStorage.setItem(LS_WP_USER,u); else localStorage.removeItem(LS_WP_USER); }
 function getWpAppPw(){ return localStorage.getItem(LS_WP_PW)||''; }
 function setWpAppPw(p){ if(p) localStorage.setItem(LS_WP_PW,p); else localStorage.removeItem(LS_WP_PW); }
-
-function ghHeaders(){
-  return {'Authorization':'Bearer '+FIXED_GIST_TOKEN,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
-}
 
 // ---- Crypto: AES-GCM with a PBKDF2-derived key from the passphrase ----
 function b64(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
@@ -968,44 +965,28 @@ async function decryptPayload(blob, passphrase){
   return JSON.parse(new TextDecoder().decode(plainBuf));
 }
 
+async function gistSyncCall(payload){
+  const res = await fetch('/api/gist-sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(()=> ({}));
+  if(!res.ok) throw new Error(data.error || `Sync request failed (${res.status})`);
+  return data;
+}
 async function findOrCreateSyncGist(){
   const existingId=getGistId();
-  if(existingId){
-    const check=await fetch(`https://api.github.com/gists/${existingId}`,{headers:ghHeaders()});
-    if(check.ok) return existingId;
-    setGistId('');
-  }
-  const listRes=await fetch('https://api.github.com/gists',{headers:ghHeaders()});
-  if(!listRes.ok) throw new Error(`GitHub error listing gists (${listRes.status})`);
-  const gists=await listRes.json();
-  const match=gists.find(g=>g.description===GIST_DESC&&g.files&&g.files[GIST_FILENAME]);
-  if(match){ setGistId(match.id); return match.id; }
-  const createRes=await fetch('https://api.github.com/gists',{
-    method:'POST',headers:ghHeaders(),
-    body:JSON.stringify({description:GIST_DESC,public:false,files:{[GIST_FILENAME]:{content:JSON.stringify({salt:'',iv:'',data:''},null,2)}}})
-  });
-  if(!createRes.ok) throw new Error(`GitHub error creating gist (${createRes.status})`);
-  const created=await createRes.json();
-  setGistId(created.id);
-  return created.id;
+  const data=await gistSyncCall({action:'find-or-create', gistId:existingId});
+  setGistId(data.gistId);
+  return data.gistId;
 }
 async function fetchSyncBlob(gistId){
-  const res=await fetch(`https://api.github.com/gists/${gistId}`,{headers:ghHeaders()});
-  if(!res.ok) throw new Error(`GitHub error reading gist (${res.status})`);
-  const gist=await res.json();
-  const file=gist.files[GIST_FILENAME];
-  if(!file) return null;
-  try{
-    const parsed=JSON.parse(file.content);
-    return parsed && parsed.data ? parsed : null;
-  }catch(_){ return null; }
+  const data=await gistSyncCall({action:'fetch', gistId});
+  return data.blob || null;
 }
 async function pushSyncBlob(gistId, blob){
-  const res=await fetch(`https://api.github.com/gists/${gistId}`,{
-    method:'PATCH',headers:ghHeaders(),
-    body:JSON.stringify({files:{[GIST_FILENAME]:{content:JSON.stringify(blob,null,2)}}})
-  });
-  if(!res.ok) throw new Error(`GitHub error saving to gist (${res.status})`);
+  await gistSyncCall({action:'push', gistId, blob});
 }
 function setTokenStatus(text,state){
   const line=document.getElementById('tokenStatusLine');
