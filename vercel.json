@@ -1,13 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "index.html", "use": "@vercel/static" },
-    { "src": "drive-push.js", "use": "@vercel/static" },
-    { "src": "api/get-drive-token.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "/api/get-drive-token", "dest": "/api/get-drive-token.js" },
-    { "src": "/drive-push.js", "dest": "/drive-push.js" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ]
+  "functions": {
+    "api/get-drive-token.js": {}
+  }
 }
