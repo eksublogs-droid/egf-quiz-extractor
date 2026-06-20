@@ -304,6 +304,20 @@
   .q-edit-opt-row input[type="radio"]{margin-top:13px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
   .q-edit-opt-row .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0;padding-top:11px}
   .q-edit-opt-row textarea{min-height:42px;flex:1}
+  .q-edit-opt-remove{
+    background:transparent;border:1px solid var(--white-faint);color:var(--white-dim);
+    border-radius:var(--radius-sm);width:28px;height:28px;flex-shrink:0;margin-top:7px;
+    font-size:13px;cursor:pointer;transition:var(--transition);
+  }
+  .q-edit-opt-remove:hover{border-color:var(--red);color:var(--red);background:rgba(239,68,68,.08)}
+  .q-edit-opt-add{
+    display:inline-flex;align-items:center;gap:6px;background:transparent;
+    border:1px dashed var(--white-faint);color:var(--white-dim);
+    border-radius:var(--radius-sm);padding:7px 14px;font-size:12.5px;
+    font-family:var(--font-main);font-weight:600;cursor:pointer;
+    transition:var(--transition);margin-top:2px;
+  }
+  .q-edit-opt-add:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-glow)}
   .q-edit-explanation{margin-top:10px}
   .q-edit-explanation textarea{min-height:64px;font-size:14.5px}
   .q-edit-label{font-size:10px;font-family:var(--font-mono);color:var(--blue-bright);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px}
@@ -2064,10 +2078,12 @@ function editQuestionInline(i,source){
   if(!li) return;
 
   if(source==='only'){
-    const optRowsOnly=q.options.map(o=>{
-      return `<div class="q-edit-opt-row q-edit-opt-row-noradio">
+    const correctIdx=q.options.findIndex(o=>o.label===q.correctLabel);
+    const optRowsOnly=q.options.map((o,idx)=>{
+      return `<div class="q-edit-opt-row" data-row-id="r${idx}">
         <span class="opt-label">${escHtml(o.label)}.</span>
-        <textarea class="q-edit-textarea" data-opt-label="${escHtml(o.label)}">${escHtml(o.text)}</textarea>
+        <textarea class="q-edit-textarea">${escHtml(o.text)}</textarea>
+        <button type="button" class="q-edit-opt-remove" onclick="removeOptionRow('qedit-options-only-${i}',this)" title="Remove option">✕</button>
       </div>`;
     }).join('');
 
@@ -2076,7 +2092,8 @@ function editQuestionInline(i,source){
         <div class="q-edit-label">Question</div>
         <textarea class="q-edit-textarea q-edit-question" id="qedit-question-only-${i}">${escHtml(q.question)}</textarea>
         <div class="q-edit-label">Options</div>
-        <div class="q-edit-options" id="qedit-options-only-${i}">${optRowsOnly}</div>
+        <div class="q-edit-options" id="qedit-options-only-${i}" data-row-seq="${q.options.length}" data-original-correct-row="r${correctIdx}">${optRowsOnly}</div>
+        <button type="button" class="q-edit-opt-add" onclick="addOptionRow('qedit-options-only-${i}','only')">+ Add option</button>
         <div class="q-edit-actions">
           <button class="q-edit-btn q-edit-save" onclick="saveQuestionInline(${i},'only')">✓ Save</button>
           <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i},'only')">Cancel</button>
@@ -2085,12 +2102,13 @@ function editQuestionInline(i,source){
     return;
   }
 
-  const optRows=q.options.map(o=>{
+  const optRows=q.options.map((o,idx)=>{
     const checked=o.label===q.correctLabel?'checked':'';
-    return `<div class="q-edit-opt-row">
-      <input type="radio" name="qedit-correct-${source}-${i}" value="${escHtml(o.label)}" ${checked}/>
+    return `<div class="q-edit-opt-row" data-row-id="r${idx}">
+      <input type="radio" name="qedit-correct-${source}-${i}" value="r${idx}" ${checked}/>
       <span class="opt-label">${escHtml(o.label)}.</span>
-      <textarea class="q-edit-textarea" data-opt-label="${escHtml(o.label)}">${escHtml(o.text)}</textarea>
+      <textarea class="q-edit-textarea">${escHtml(o.text)}</textarea>
+      <button type="button" class="q-edit-opt-remove" onclick="removeOptionRow('qedit-options-${source}-${i}',this)" title="Remove option">✕</button>
     </div>`;
   }).join('');
 
@@ -2099,7 +2117,8 @@ function editQuestionInline(i,source){
       <div class="q-edit-label">Question</div>
       <textarea class="q-edit-textarea q-edit-question" id="qedit-question-${source}-${i}">${escHtml(q.question)}</textarea>
       <div class="q-edit-label">Options &amp; correct answer</div>
-      <div class="q-edit-options" id="qedit-options-${source}-${i}">${optRows}</div>
+      <div class="q-edit-options" id="qedit-options-${source}-${i}" data-row-seq="${q.options.length}">${optRows}</div>
+      <button type="button" class="q-edit-opt-add" onclick="addOptionRow('qedit-options-${source}-${i}','${source}','qedit-correct-${source}-${i}')">+ Add option</button>
       <div class="q-edit-explanation">
         <div class="q-edit-label">Explanation</div>
         <textarea class="q-edit-textarea" id="qedit-explanation-${source}-${i}">${escHtml(q.explanation)}</textarea>
@@ -2109,6 +2128,62 @@ function editQuestionInline(i,source){
         <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i},'${source}')">Cancel</button>
       </div>
     </div>`;
+}
+
+// Returns the sequential option letter for a given zero-based position (0->A, 1->B, ...).
+function labelForIndex(idx){
+  return String.fromCharCode(65+idx);
+}
+
+// Appends a new empty option row to the given options container (works for both the
+// "only" form, which has no radio, and the "answers" form, which does). Assigns a
+// fresh, never-reused row-id so existing rows' identities are unaffected, then
+// relabels all rows A,B,C... in sequence.
+function addOptionRow(containerId,source,radioName){
+  const container=document.getElementById(containerId);
+  if(!container) return;
+  const seq=parseInt(container.dataset.rowSeq||'0',10);
+  container.dataset.rowSeq=String(seq+1);
+  const rowId='r'+seq;
+
+  const row=document.createElement('div');
+  row.className='q-edit-opt-row';
+  row.dataset.rowId=rowId;
+  let html='';
+  if(source!=='only'){
+    html+=`<input type="radio" name="${radioName}" value="${rowId}"/>`;
+  }
+  html+=`<span class="opt-label"></span><textarea class="q-edit-textarea"></textarea>`;
+  html+=`<button type="button" class="q-edit-opt-remove" onclick="removeOptionRow('${containerId}',this)" title="Remove option">✕</button>`;
+  row.innerHTML=html;
+  container.appendChild(row);
+  relabelOptionRows(containerId);
+}
+
+// Removes the option row containing the clicked remove button, refusing to drop
+// below 1 remaining option, then relabels the rest A,B,C... with no gaps.
+function removeOptionRow(containerId,btn){
+  const container=document.getElementById(containerId);
+  if(!container) return;
+  const rows=container.querySelectorAll('.q-edit-opt-row');
+  if(rows.length<=1){ toast('At least one option is required','error'); return; }
+  const row=btn.closest('.q-edit-opt-row');
+  if(row) row.remove();
+  relabelOptionRows(containerId);
+}
+
+// Re-letters every option row in a container, in current DOM order, as A,B,C...
+// Only touches the visible label text — never touches data-row-id, so the
+// row-id-based correct-answer tracking (radio value / data-original-correct-row)
+// stays valid through any add/remove.
+function relabelOptionRows(containerId){
+  const container=document.getElementById(containerId);
+  if(!container) return;
+  const rows=Array.from(container.querySelectorAll('.q-edit-opt-row'));
+  rows.forEach((row,idx)=>{
+    const labelSpan=row.querySelector('.opt-label');
+    if(labelSpan) labelSpan.textContent=labelForIndex(idx)+'.';
+  });
 }
 
 // Cancel: just re-render the question (in the tab the edit was opened from) from
@@ -2143,27 +2218,44 @@ function saveQuestionInline(i,source){
   const newQuestionText=questionEl.value.trim();
   if(!newQuestionText){ toast('Question text cannot be empty','error'); return; }
 
-  const optTextareas=Array.from(optionsContainer.querySelectorAll('textarea[data-opt-label]'));
-  const newOptions=q.options.map(o=>{
-    const ta=optTextareas.find(t=>t.dataset.optLabel===o.label);
-    const newText=ta?ta.value.trim():o.text;
-    return{ label:o.label, text:newText };
+  // Read rows in current DOM order — this is the source of truth for both text and
+  // final label, since rows may have been added/removed since the form opened.
+  // Labels are recomputed sequentially (A,B,C...) here rather than trusted from the
+  // DOM text, so they're always correct even if relabelOptionRows was somehow skipped.
+  const rows=Array.from(optionsContainer.querySelectorAll('.q-edit-opt-row'));
+  if(rows.length===0){ toast('At least one option is required','error'); return; }
+
+  const newOptions=rows.map((row,idx)=>{
+    const ta=row.querySelector('textarea');
+    return{ label:labelForIndex(idx), text: ta?ta.value.trim():'', _rowId: row.dataset.rowId };
   });
   for(const o of newOptions){
     if(!o.text){ toast('Option text cannot be empty','error'); return; }
   }
 
-  // Commit question text + option text — common to both forms.
+  // Commit question text — common to both forms. Options committed below per-branch
+  // (after stripping the internal _rowId tracking field).
   q.question=newQuestionText;
-  q.options=newOptions;
 
   if(source==='only'){
     // Reduced form: no correct-answer radio, no explanation box on screen.
-    // Keep the existing correct answer pointing at the right option text in case
-    // the option's wording changed (label stays the same either way), and leave
-    // correctLabel/explanation untouched since they were never shown or edited here.
-    const stillCorrectOpt=newOptions.find(o=>o.label===q.correctLabel);
-    if(stillCorrectOpt) q.correctText=stillCorrectOpt.text;
+    // Find the row that was correct when the form opened (tracked by row-id, since
+    // its visible label may have shifted from adds/deletes/relabeling), and carry
+    // correctLabel/correctText forward to that row's new label + text.
+    const originalCorrectRowId=optionsContainer.dataset.originalCorrectRow;
+    const stillCorrectOpt=newOptions.find(o=>o._rowId===originalCorrectRowId);
+    q.options=newOptions.map(o=>({label:o.label,text:o.text}));
+    if(stillCorrectOpt){
+      q.correctLabel=stillCorrectOpt.label;
+      q.correctText=stillCorrectOpt.text;
+    } else {
+      // The option that was correct got deleted from this tab (which can't see/pick
+      // a new correct answer). Fall back to the first remaining option so correctLabel
+      // always points at something real, and flag it so the answer key gets checked.
+      q.correctLabel=newOptions[0].label;
+      q.correctText=newOptions[0].text;
+      toast('Correct answer option was deleted — defaulted to option A. Check it in Answers tab.','error');
+    }
   } else {
     // Full form (Answers + Explanations): also read correct-answer radio + explanation.
     const explanationEl=document.getElementById('qedit-explanation-'+source+'-'+i);
@@ -2171,14 +2263,12 @@ function saveQuestionInline(i,source){
 
     const checkedRadio=optionsContainer.querySelector(`input[name="qedit-correct-${source}-${i}"]:checked`);
     if(!checkedRadio){ toast('Pick a correct answer','error'); return; }
-    const newCorrectLabel=checkedRadio.value;
-    const newCorrectOpt=newOptions.find(o=>o.label===newCorrectLabel);
-    const newCorrectText=newCorrectOpt?newCorrectOpt.text:q.correctText;
-    const newExplanation=explanationEl.value.trim();
-
-    q.correctLabel=newCorrectLabel;
-    q.correctText=newCorrectText;
-    q.explanation=newExplanation;
+    const checkedRowId=checkedRadio.value;
+    const newCorrectOpt=newOptions.find(o=>o._rowId===checkedRowId);
+    q.options=newOptions.map(o=>({label:o.label,text:o.text}));
+    q.correctLabel=newCorrectOpt?newCorrectOpt.label:q.correctLabel;
+    q.correctText=newCorrectOpt?newCorrectOpt.text:q.correctText;
+    q.explanation=explanationEl.value.trim();
   }
 
   // Rebuild generatedJSON from the updated verifiedData so PDF/JSON/Drive/WPDM/PQ downloads
