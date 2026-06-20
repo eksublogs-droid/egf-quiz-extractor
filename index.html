@@ -634,7 +634,7 @@
       <div class="field-row">
         <div class="field-group">
           <label>University Name</label>
-          <input type="text" id="courseUniversity" placeholder="Will be filled by AI..." disabled/>
+          <input type="text" id="courseUniversity" placeholder="Will be filled by AI..." disabled oninput="onUniversityNameInput()"/>
         </div>
         <div class="field-group">
           <label>Faculty</label>
@@ -643,6 +643,15 @@
         <div class="field-group">
           <label>Department</label>
           <input type="text" id="courseDepartment" placeholder="Will be filled by AI..." disabled/>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label>Acronym</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="courseAcronym" placeholder="Auto-detected..." disabled style="flex:1"/>
+            <button type="button" class="btn btn-secondary btn-sm" id="acronymRedetectBtn" onclick="redetectAcronym()" title="Re-detect acronym from University Name" style="flex-shrink:0;padding:0 12px">🔁</button>
+          </div>
         </div>
       </div>
       <div class="field-row">
@@ -859,12 +868,142 @@
 //  STATE
 // ════════════════════════════════════════════════════════
 let uploadedFiles   = [];   // File objects
-let extractedData   = null; // { questions, courseUniversity, courseFaculty, courseDepartment, courseTitle, courseSemester, courseYear, docTitle }
+let extractedData   = null; // { questions, courseUniversity, courseAcronym, courseFaculty, courseDepartment, courseTitle, courseSemester, courseYear, docTitle }
 let verifiedData    = null; // questions with answers + explanations
 let generatedJSON   = null;
 let currentKeyIndex = 0;
 let processingStage = 0;    // 0=fresh, 1=extracted, 2=verified
 const GEMINI_MODEL  = 'gemini-2.5-flash';
+
+// ════════════════════════════════════════════════════════
+//  UNIVERSITY ACRONYM LOOKUP
+//  Known Nigerian university name → official acronym.
+//  Lookup runs first (handles cases a first-letter algorithm gets
+//  wrong, e.g. "Ekiti State University" → EKSU, not ESU).
+//  Falls back to first-letter-of-significant-words for anything
+//  not in this list, so unknown/new schools still get something.
+// ════════════════════════════════════════════════════════
+const EGF_UNI_ACRONYMS = {
+  'university of lagos':'UNILAG',
+  'university of ibadan':'UI',
+  'university of nigeria nsukka':'UNN',
+  'university of nigeria':'UNN',
+  'obafemi awolowo university':'OAU',
+  'ahmadu bello university':'ABU',
+  'university of benin':'UNIBEN',
+  'university of ilorin':'UNILORIN',
+  'university of port harcourt':'UNIPORT',
+  'university of calabar':'UNICAL',
+  'university of jos':'UNIJOS',
+  'university of abuja':'UNIABUJA',
+  'university of maiduguri':'UNIMAID',
+  'university of uyo':'UNIUYO',
+  'usman danfodiyo university':'UDUSOK',
+  'usmanu danfodiyo university':'UDUSOK',
+  'bayero university kano':'BUK',
+  'bayero university':'BUK',
+  'ekiti state university':'EKSU',
+  'lagos state university':'LASU',
+  'lagos state university of science and technology':'LASUSTECH',
+  'osun state university':'UNIOSUN',
+  'olabisi onabanjo university':'OOU',
+  'ladoke akintola university of technology':'LAUTECH',
+  'rivers state university':'RSU',
+  'delta state university':'DELSU',
+  'imo state university':'IMSU',
+  'abia state university':'ABSU',
+  'enugu state university of science and technology':'ESUT',
+  'nnamdi azikiwe university':'UNIZIK',
+  'federal university of technology akure':'FUTA',
+  'federal university of technology minna':'FUTMINNA',
+  'federal university of technology owerri':'FUTO',
+  'federal university of agriculture abeokuta':'FUNAAB',
+  'federal university oye ekiti':'FUOYE',
+  'federal university otuoke':'FUOTUOKE',
+  'federal university dutse':'FUD',
+  'federal university dutsin-ma':'FUDMA',
+  'kwara state university':'KWASU',
+  'kano state university of science and technology':'KUST',
+  'kaduna state university':'KASU',
+  'taraba state university':'TSU',
+  'plateau state university':'PLASU',
+  'benue state university':'BSU',
+  'akwa ibom state university':'AKSU',
+  'akwa ibom state university of technology':'AKUTECH',
+  'cross river university of technology':'CRUTECH',
+  'niger delta university':'NDU',
+  'adekunle ajasin university':'AAUA',
+  'tai solarin university of education':'TASUED',
+  'michael okpara university of agriculture':'MOUAU',
+  'federal university of petroleum resources':'FUPRE',
+  'university of medical sciences ondo':'UNIMED',
+  'pan-atlantic university':'PAU',
+  'covenant university':'CU',
+  'babcock university':'BU',
+  'bowen university':'BOWEN',
+  'redeemer\'s university':'RUN',
+  'afe babalola university':'ABUAD',
+  'landmark university':'LMU',
+  'al-hikmah university':'ALHIKAN',
+  'caleb university':'CALEBUNI',
+  'lead city university':'LCU',
+  'crawford university':'CRAWFORD',
+  'crescent university':'CRESCENT',
+  'igbinedion university':'IUO',
+  'veritas university':'VUNA',
+  'baze university':'BAZE',
+  'nile university of nigeria':'NUN',
+  'wesley university':'WUMI',
+  'joseph ayo babalola university':'JABU',
+  'mountain top university':'MTU',
+  'godfrey okoye university':'GOUNI',
+  'augustine university':'AUI',
+  'caritas university':'CARITAS',
+};
+
+// Small stop-words list — skipped when building a first-letter fallback acronym.
+const EGF_ACRONYM_STOPWORDS = new Set(['of','the','and','for','&','nigeria','state']);
+
+function deriveAcronym(universityName){
+  const raw=(universityName||'').trim();
+  if(!raw) return '';
+  const key=raw.toLowerCase().replace(/\s+/g,' ').trim();
+
+  // 1. Exact lookup
+  if(EGF_UNI_ACRONYMS[key]) return EGF_UNI_ACRONYMS[key];
+
+  // 2. Fuzzy lookup — handles minor variations (extra words, punctuation, etc.)
+  for(const name in EGF_UNI_ACRONYMS){
+    if(key.includes(name) || name.includes(key)) return EGF_UNI_ACRONYMS[name];
+  }
+
+  // 3. Fallback: first letter of each significant word (skip stop-words).
+  const words=raw.replace(/[^a-zA-Z\s]/g,' ').split(/\s+/).filter(Boolean);
+  const letters=words
+    .filter(w=>!EGF_ACRONYM_STOPWORDS.has(w.toLowerCase()))
+    .map(w=>w[0].toUpperCase());
+  if(letters.length) return letters.join('');
+
+  // Absolute fallback if everything got filtered out (e.g. name was all stop-words)
+  return words.map(w=>w[0].toUpperCase()).join('');
+}
+
+// Live re-derive acronym whenever the user types/edits the University Name
+// field directly (covers manual corrections after AI extraction).
+function onUniversityNameInput(){
+  const uniVal=document.getElementById('courseUniversity').value;
+  document.getElementById('courseAcronym').value=deriveAcronym(uniVal);
+}
+
+// Manual "🔁 Re-detect" button — re-runs the lookup against whatever is
+// currently in the University Name field, overwriting any manual edit
+// the user made to the Acronym field.
+function redetectAcronym(){
+  const uniVal=document.getElementById('courseUniversity').value;
+  if(!uniVal.trim()){ toast('Enter a university name first','error'); return; }
+  document.getElementById('courseAcronym').value=deriveAcronym(uniVal);
+  toast('Acronym re-detected','success');
+}
 
 // ════════════════════════════════════════════════════════
 //  TOAST NOTIFICATIONS
@@ -1578,7 +1717,7 @@ function resetAll(){
   document.getElementById('progressWrap').style.display='none';
   setProgress(0,'');
   document.getElementById('outputArea').style.display='none';
-  ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
+  ['courseUniversity','courseAcronym','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
     const el=document.getElementById(id);
     el.value='';
     el.disabled=true;
@@ -1599,6 +1738,7 @@ function saveCourseInfo(){
   if(!extractedData){ toast('No course info to save yet — run extraction first','error'); return; }
 
   const finalUniversity=document.getElementById('courseUniversity').value.trim();
+  const finalAcronym=document.getElementById('courseAcronym').value.trim();
   const finalFaculty=document.getElementById('courseFaculty').value.trim();
   const finalDepartment=document.getElementById('courseDepartment').value.trim();
   const finalTitle=document.getElementById('courseTitle').value.trim()||'Unknown Course';
@@ -1607,6 +1747,7 @@ function saveCourseInfo(){
   const finalYear=document.getElementById('courseYear').value.trim();
 
   extractedData.courseUniversity=finalUniversity;
+  extractedData.courseAcronym=finalAcronym;
   extractedData.courseFaculty=finalFaculty;
   extractedData.courseDepartment=finalDepartment;
   extractedData.courseTitle=finalTitle;
@@ -1619,7 +1760,7 @@ function saveCourseInfo(){
 
   // Rebuild generatedJSON (category slug depends on docTitle/year) if questions already exist.
   if(verifiedData){
-    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,finalYear,finalCode,finalUniversity);
+    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,finalYear,finalCode,finalUniversity,finalAcronym);
     const jsonOutputEl=document.getElementById('jsonOutput');
     if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
   }
@@ -1686,7 +1827,7 @@ async function startProcessing(){
   } else if(processingStage===0){
     // Full fresh run: hide old output and reset course fields
     document.getElementById('outputArea').style.display='none';
-    ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
+    ['courseUniversity','courseAcronym','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>{
       const el=document.getElementById(id);
       el.value='';
       el.disabled=true;
@@ -1750,19 +1891,22 @@ Rules:
 
       // Pre-fill editable fields and enable them for editing
       document.getElementById('courseUniversity').value=extracted.courseUniversity||'';
+      const autoAcronym=deriveAcronym(extracted.courseUniversity||'');
+      document.getElementById('courseAcronym').value=autoAcronym;
       document.getElementById('courseFaculty').value=extracted.courseFaculty||'';
       document.getElementById('courseDepartment').value=extracted.courseDepartment||'';
       document.getElementById('courseTitle').value=extracted.courseTitle||'';
       document.getElementById('courseCode').value=extracted.courseCode||'';
       document.getElementById('courseSemester').value=extracted.courseSemester||'';
       document.getElementById('courseYear').value=extracted.courseYear||'';
-      ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
+      ['courseUniversity','courseAcronym','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
       document.getElementById('courseInfoSaveRow').style.display='block';
 
       // Save extraction result so we can resume from here if verification fails
       extractedData={
         questions:extracted.questions,
         courseUniversity:extracted.courseUniversity||'',
+        courseAcronym:autoAcronym,
         courseFaculty:extracted.courseFaculty||'',
         courseDepartment:extracted.courseDepartment||'',
         courseTitle:extracted.courseTitle||'',
@@ -1879,6 +2023,7 @@ ${conflictQuestionsText}`;
 
       // Read course fields (user may have edited them after extraction)
       const finalUniversity=document.getElementById('courseUniversity').value||extractedData.courseUniversity||'';
+      const finalAcronym=document.getElementById('courseAcronym').value||extractedData.courseAcronym||deriveAcronym(finalUniversity);
       const finalFaculty=document.getElementById('courseFaculty').value||extractedData.courseFaculty||'';
       const finalDepartment=document.getElementById('courseDepartment').value||extractedData.courseDepartment||'';
       const finalTitle=document.getElementById('courseTitle').value||extractedData.courseTitle||'Unknown Course';
@@ -1901,6 +2046,7 @@ ${conflictQuestionsText}`;
       });
 
       extractedData.courseUniversity=finalUniversity;
+      extractedData.courseAcronym=finalAcronym;
       extractedData.courseFaculty=finalFaculty;
       extractedData.courseDepartment=finalDepartment;
       extractedData.courseTitle=finalTitle;
@@ -1909,7 +2055,7 @@ ${conflictQuestionsText}`;
       extractedData.courseYear=finalYear;
       extractedData.docTitle=docTitle;
 
-      generatedJSON=buildJSON(verifiedData,docTitle,finalYear,finalCode,finalUniversity);
+      generatedJSON=buildJSON(verifiedData,docTitle,finalYear,finalCode,finalUniversity,finalAcronym);
       processingStage=2; // verification done
     }
 
@@ -2300,7 +2446,7 @@ function saveQuestionInline(i,source){
   // that happen from this point on reflect the edit. Already-downloaded files are unaffected.
   const finalYear=document.getElementById('courseYear')?.value||extractedData?.courseYear||'';
   const docTitle=extractedData?.docTitle||'';
-  generatedJSON=buildJSON(verifiedData,docTitle,finalYear,extractedData?.courseCode||'',extractedData?.courseUniversity||'');
+  generatedJSON=buildJSON(verifiedData,docTitle,finalYear,extractedData?.courseCode||'',extractedData?.courseUniversity||'',extractedData?.courseAcronym||'');
   const jsonOutputEl=document.getElementById('jsonOutput');
   if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
 
@@ -2371,9 +2517,9 @@ function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&l
 // ════════════════════════════════════════════════════════
 //  BUILD JSON (EduGlobalForge format)
 // ════════════════════════════════════════════════════════
-function buildJSON(questions, courseTitle, courseYear, courseCode, university){
+function buildJSON(questions, courseTitle, courseYear, courseCode, university, acronym){
   const slug=buildSlug(courseTitle,courseYear);
-  const categoryLabel=buildCategoryLabel(courseCode,university);
+  const categoryLabel=buildCategoryLabel(courseCode,university,acronym,courseYear);
   const now=new Date().toISOString().replace('T',' ').substring(0,19);
   let globalId=1; let globalAnswerId=1;
 
@@ -2418,15 +2564,26 @@ function buildJSON(questions, courseTitle, courseYear, courseCode, university){
   });
 }
 
-function buildCategoryLabel(courseCode, university){
+// Category label format: "CODE (ACRONYM) YEAR", e.g. "CSC101 (EKSU) 2019/2020".
+// Falls back to the old "University of X" → "X Uni" shortening if no acronym
+// is available (keeps older saved data / edge cases working).
+function buildCategoryLabel(courseCode, university, acronym, year){
   const code=(courseCode||'').trim().toUpperCase().replace(/\s+/g,'');
-  let uniShort=(university||'').trim();
-  uniShort=uniShort.replace(/\buniversity\s+of\b/i,'').replace(/\buniversity\b/i,'').trim().replace(/\s+/g,' ');
-  if(uniShort) uniShort+=' Uni';
-  if(code && uniShort) return `${code} (${uniShort})`;
-  if(code) return code;
-  if(uniShort) return uniShort;
-  return 'Uncategorized';
+  let uniShort=(acronym||'').trim();
+  if(!uniShort){
+    uniShort=(university||'').trim();
+    uniShort=uniShort.replace(/\buniversity\s+of\b/i,'').replace(/\buniversity\b/i,'').trim().replace(/\s+/g,' ');
+    if(uniShort) uniShort+=' Uni';
+  }
+  const yr=(year||'').trim();
+
+  let label='';
+  if(code && uniShort) label=`${code} (${uniShort})`;
+  else if(code) label=code;
+  else if(uniShort) label=uniShort;
+  else return yr || 'Uncategorized';
+
+  return yr ? `${label} ${yr}` : label;
 }
 
 function buildSlug(title,year){
@@ -2447,6 +2604,7 @@ async function downloadPDF(mode){
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
 
   const university=extractedData?.courseUniversity||'';
+  const acronym=extractedData?.courseAcronym||deriveAcronym(university);
   const faculty=extractedData?.courseFaculty||'';
   const department=extractedData?.courseDepartment||'';
   const title=extractedData?.courseTitle||'Quiz';
@@ -2519,10 +2677,10 @@ async function downloadPDF(mode){
     doc.setFont('helvetica','bold');
     doc.setFontSize(6.5);
     doc.setTextColor(...whiteDim);
-    let cinfo=[university,faculty,department,courseCode,title].filter(Boolean).join(' · ');
+    let cinfo=[acronym,faculty,department,courseCode,title].filter(Boolean).join(' · ');
     const maxCW=pageW-margin*2-70;
     while(doc.getStringUnitWidth(cinfo)*6.5/doc.internal.scaleFactor>maxCW && cinfo.length>8) cinfo=cinfo.slice(0,-1);
-    if(cinfo!==([university,faculty,department,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
+    if(cinfo!==([acronym,faculty,department,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
     doc.text(cinfo,pageW/2,12.5,{align:'center'});
     // Page number
     doc.setFont('helvetica','normal');
@@ -2725,7 +2883,7 @@ async function downloadPDF(mode){
   // ── FOOTER ON LAST PAGE ──
   drawFooter();
 
-  const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),department.toUpperCase(),title,university.toUpperCase()];
+  const fnameParts=[courseCode,year.replace(/[^0-9]/g,''),semester.toUpperCase(),faculty.toUpperCase(),department.toUpperCase(),title,acronym.toUpperCase()];
   const fnameBase=fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
   const fname=mode==='questions'?`${fnameBase}_Questions.pdf`:`${fnameBase}_QA.pdf`;
   // Download via data URI injected into a hidden iframe to avoid:
@@ -2902,10 +3060,11 @@ async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
       await Promise.all([makePublic(qResult.id), makePublic(aResult.id)]);
       const qUrl = driveDownloadUrl(qResult.id);
       const aUrl = driveDownloadUrl(aResult.id);
+      const pkgAcronym = extractedData?.courseAcronym || deriveAcronym(extractedData?.courseUniversity || '');
       btn.innerHTML = '📦 Creating packages…';
       const [qPkg, aPkg] = await Promise.all([
-        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${extractedData?.courseUniversity||''}`.trim() + ' — Ques Only', linkLabel: 'Download Past Questions (No Answers)', fileUrl: qUrl, fileName: qResult.name, fileSize: qBlob.size, basePrice: 0 }),
-        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${extractedData?.courseUniversity||''}`.trim() + ' — Q+A', linkLabel: 'Download Past Questions with Answers', fileUrl: aUrl, fileName: aResult.name, fileSize: aBlob.size, basePrice: 200 })
+        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${pkgAcronym}`.trim() + ' — Ques Only', linkLabel: 'Download Past Questions (No Answers)', fileUrl: qUrl, fileName: qResult.name, fileSize: qBlob.size, basePrice: 0 }),
+        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${pkgAcronym}`.trim() + ' — Q+A', linkLabel: 'Download Past Questions with Answers', fileUrl: aUrl, fileName: aResult.name, fileSize: aBlob.size, basePrice: 200 })
       ]);
       btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
       btn.disabled = false;
@@ -3039,7 +3198,7 @@ function pqlDeriveLevel(courseCode) {
 
 function pqlBuildTitle() {
   const code = extractedData?.courseCode || '';
-  const uni  = extractedData?.courseUniversity || '';
+  const uni  = extractedData?.courseAcronym || deriveAcronym(extractedData?.courseUniversity || '');
   const fac  = extractedData?.courseFaculty || '';
   const lvl  = pqlDeriveLevel(code) || '';
   const sem  = extractedData?.courseSemester || '';
