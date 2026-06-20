@@ -1954,16 +1954,27 @@ function renderSection1(questions,page=1){
   const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
   pageItems.forEach((q,pi)=>{
     const i=startIdx+pi;
-    const li=document.createElement('li'); li.className='q-item';
-    const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
-    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
-      <div class="q-content">
-        <div class="q-text">${escHtml(q.question)}</div>
-        <div class="q-options">${opts}</div>
-      </div>`;
-    ul.appendChild(li);
+    renderOnlyItem(i,q,ul);
   });
   renderPager('pagerOnly',page,totalPages,(p)=>renderSection1(questions,p));
+}
+
+// Renders a single question <li> (normal/view mode) for Section 1 (Questions Only) and
+// appends it to `ul`. Mirrors renderAnswerItem for Section 2 — pulled out so a single
+// question can be re-rendered after an inline edit without re-rendering the whole list.
+function renderOnlyItem(i,q,ul){
+  const li=document.createElement('li');
+  li.className='q-item';
+  li.id='qitem-only-'+i;
+  li.dataset.qIndex=String(i);
+  const opts=q.options.map(o=>`<div class="q-opt"><span class="opt-label">${o.label}.</span><span class="opt-text">${escHtml(o.text)}</span></div>`).join('');
+  li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+    <div class="q-content">
+      <div class="q-text">${escHtml(q.question)}</div>
+      <div class="q-options">${opts}</div>
+      <button class="q-item-editbtn" onclick="editQuestionInline(${i},'only')">✎ Edit</button>
+    </div>`;
+  ul.appendChild(li);
 }
 
 function renderSection2(questions,page=1){
@@ -2004,29 +2015,56 @@ function renderAnswerItem(i,q,ul){
         <div class="exp-label">Explanation</div>
         <p>${escHtml(q.explanation)}</p>
       </div>
-      <button class="q-item-editbtn" onclick="editQuestionInline(${i})">✎ Edit</button>
+      <button class="q-item-editbtn" onclick="editQuestionInline(${i},'answers')">✎ Edit</button>
     </div>`;
   ul.appendChild(li);
 }
 
 // ════════════════════════════════════════════════════════
-//  INLINE QUESTION EDITING (Section 2 / renderSection2 only)
-//  Pure in-memory edits to verifiedData — no AI call, no network request.
+//  INLINE QUESTION EDITING (Section 1 "Questions Only" + Section 2 "Answers +
+//  Explanations" — both views render the same verifiedData[i] object, so an
+//  edit saved from either tab updates the data once and both tabs refresh
+//  immediately. Pure in-memory edits — no AI call, no network request.
 // ════════════════════════════════════════════════════════
+
+// Re-renders a single question's <li> back to its normal (non-edit) view in
+// the given list, preserving its position in that list. Used after both
+// Save and Cancel, for whichever of the two tabs currently has that li in the DOM.
+function restoreItemView(i,domIdPrefix,renderFn,question){
+  const li=document.getElementById(domIdPrefix+i);
+  if(!li) return; // that tab may not have this li (different page in its own pagination) — fine, skip it
+  const ul=li.parentNode;
+  const next=li.nextSibling;
+  li.remove();
+  renderFn(i,question,ul);
+  const fresh=document.getElementById(domIdPrefix+i);
+  if(fresh && next) ul.insertBefore(fresh,next);
+}
+
+// Re-renders question i's <li> back to normal view in BOTH tabs (whichever of the
+// two are currently present in the DOM — Section 1 and Section 2 are both always
+// rendered, just toggled with display:none, so both normally exist at once).
+function restoreItemViewBothTabs(i,question){
+  restoreItemView(i,'qitem-only-',renderOnlyItem,question);
+  restoreItemView(i,'qitem-answers-',renderAnswerItem,question);
+}
 
 // Swap a single question's <li> into edit mode: editable question text,
 // editable option text per option, a radio per option to pick the correct
 // answer, and an editable explanation textarea.
-function editQuestionInline(i){
+// `source` is 'only' or 'answers' — identifies which tab's li to swap (the other
+// tab's copy of this question, if present, is left alone until Save/Cancel).
+function editQuestionInline(i,source){
   if(!verifiedData || !verifiedData[i]) return;
   const q=verifiedData[i];
-  const li=document.getElementById('qitem-answers-'+i);
+  const domId=(source==='only'?'qitem-only-':'qitem-answers-')+i;
+  const li=document.getElementById(domId);
   if(!li) return;
 
   const optRows=q.options.map(o=>{
     const checked=o.label===q.correctLabel?'checked':'';
     return `<div class="q-edit-opt-row">
-      <input type="radio" name="qedit-correct-${i}" value="${escHtml(o.label)}" ${checked}/>
+      <input type="radio" name="qedit-correct-${source}-${i}" value="${escHtml(o.label)}" ${checked}/>
       <span class="opt-label">${escHtml(o.label)}.</span>
       <textarea class="q-edit-textarea" data-opt-label="${escHtml(o.label)}">${escHtml(o.text)}</textarea>
     </div>`;
@@ -2035,46 +2073,43 @@ function editQuestionInline(i){
   li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
     <div class="q-content">
       <div class="q-edit-label">Question</div>
-      <textarea class="q-edit-textarea q-edit-question" id="qedit-question-${i}">${escHtml(q.question)}</textarea>
+      <textarea class="q-edit-textarea q-edit-question" id="qedit-question-${source}-${i}">${escHtml(q.question)}</textarea>
       <div class="q-edit-label">Options &amp; correct answer</div>
-      <div class="q-edit-options" id="qedit-options-${i}">${optRows}</div>
+      <div class="q-edit-options" id="qedit-options-${source}-${i}">${optRows}</div>
       <div class="q-edit-explanation">
         <div class="q-edit-label">Explanation</div>
-        <textarea class="q-edit-textarea" id="qedit-explanation-${i}">${escHtml(q.explanation)}</textarea>
+        <textarea class="q-edit-textarea" id="qedit-explanation-${source}-${i}">${escHtml(q.explanation)}</textarea>
       </div>
       <div class="q-edit-actions">
-        <button class="q-edit-btn q-edit-save" onclick="saveQuestionInline(${i})">✓ Save</button>
-        <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i})">Cancel</button>
+        <button class="q-edit-btn q-edit-save" onclick="saveQuestionInline(${i},'${source}')">✓ Save</button>
+        <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i},'${source}')">Cancel</button>
       </div>
     </div>`;
 }
 
-// Cancel: just re-render the question from verifiedData (untouched), discarding any typed edits.
-function cancelQuestionEdit(i){
+// Cancel: just re-render the question (in the tab the edit was opened from) from
+// verifiedData (untouched), discarding any typed edits. The other tab's copy of
+// this question was never touched, so it's left as-is.
+function cancelQuestionEdit(i,source){
   if(!verifiedData || !verifiedData[i]) return;
-  const li=document.getElementById('qitem-answers-'+i);
-  if(!li) return;
-  const ul=li.parentNode;
-  const next=li.nextSibling;
-  li.remove();
-  renderAnswerItem(i,verifiedData[i],ul);
-  // renderAnswerItem appends to the end of ul; move the freshly-rendered li back into its
-  // original position so question order in the list stays correct.
-  const fresh=document.getElementById('qitem-answers-'+i);
-  if(fresh && next) ul.insertBefore(fresh,next);
+  const domIdPrefix=source==='only'?'qitem-only-':'qitem-answers-';
+  const renderFn=source==='only'?renderOnlyItem:renderAnswerItem;
+  restoreItemView(i,domIdPrefix,renderFn,verifiedData[i]);
 }
 
-// Save: reads the edit form for question i, writes the changes into verifiedData[i] in place,
-// rebuilds generatedJSON from the updated verifiedData, re-renders that question back to
-// normal view, refreshes the JSON output panel, and shows a "Saved" toast.
+// Save: reads the edit form for question i (opened from tab `source`), writes the
+// changes into verifiedData[i] in place, rebuilds generatedJSON from the updated
+// verifiedData, re-renders that question back to normal view in BOTH the Questions
+// Only and Answers + Explanations tabs (since they share the same data), refreshes
+// the JSON output panel, and shows a "Saved" toast.
 // Pure in-memory update — no AI call, no network request.
-function saveQuestionInline(i){
+function saveQuestionInline(i,source){
   if(!verifiedData || !verifiedData[i]) return;
   const q=verifiedData[i];
 
-  const questionEl=document.getElementById('qedit-question-'+i);
-  const explanationEl=document.getElementById('qedit-explanation-'+i);
-  const optionsContainer=document.getElementById('qedit-options-'+i);
+  const questionEl=document.getElementById('qedit-question-'+source+'-'+i);
+  const explanationEl=document.getElementById('qedit-explanation-'+source+'-'+i);
+  const optionsContainer=document.getElementById('qedit-options-'+source+'-'+i);
   if(!questionEl||!explanationEl||!optionsContainer) return;
 
   const newQuestionText=questionEl.value.trim();
@@ -2090,7 +2125,7 @@ function saveQuestionInline(i){
     if(!o.text){ toast('Option text cannot be empty','error'); return; }
   }
 
-  const checkedRadio=optionsContainer.querySelector(`input[name="qedit-correct-${i}"]:checked`);
+  const checkedRadio=optionsContainer.querySelector(`input[name="qedit-correct-${source}-${i}"]:checked`);
   if(!checkedRadio){ toast('Pick a correct answer','error'); return; }
   const newCorrectLabel=checkedRadio.value;
   const newCorrectOpt=newOptions.find(o=>o.label===newCorrectLabel);
@@ -2098,7 +2133,9 @@ function saveQuestionInline(i){
   const newExplanation=explanationEl.value.trim();
 
   // Commit the edits into verifiedData (in place — same array, same object references for
-  // unedited questions, so nothing else downstream needs to change).
+  // unedited questions, so nothing else downstream needs to change). Since both tabs render
+  // from this same verifiedData array, this single update is what makes the edit show up
+  // in both Questions Only and Answers + Explanations.
   q.question=newQuestionText;
   q.options=newOptions;
   q.correctLabel=newCorrectLabel;
@@ -2113,16 +2150,9 @@ function saveQuestionInline(i){
   const jsonOutputEl=document.getElementById('jsonOutput');
   if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
 
-  // Re-render this question back to normal view (in place, preserving its position).
-  const li=document.getElementById('qitem-answers-'+i);
-  if(li){
-    const ul=li.parentNode;
-    const next=li.nextSibling;
-    li.remove();
-    renderAnswerItem(i,q,ul);
-    const fresh=document.getElementById('qitem-answers-'+i);
-    if(fresh && next) ul.insertBefore(fresh,next);
-  }
+  // Re-render this question back to normal view in BOTH tabs so the edit appears
+  // immediately whichever tab the user looks at next.
+  restoreItemViewBothTabs(i,q);
 
   toast('Saved','success');
 }
