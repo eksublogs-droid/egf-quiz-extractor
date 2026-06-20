@@ -711,6 +711,9 @@
       <button class="jump-btn" id="pushDriveBtn" onclick="pushToDrive()">
         <span class="jump-dot" style="background:#34D399"></span> Push to Drive
       </button>
+      <button class="jump-btn" id="postAysQuestionsBtn" onclick="postToAysQuestions()">
+        <span class="jump-dot" style="background:#F5C842"></span> Post to AYS Questions
+      </button>
     </div>
 
     <!-- SECTION 1: Questions Only -->
@@ -1616,7 +1619,7 @@ function saveCourseInfo(){
 
   // Rebuild generatedJSON (category slug depends on docTitle/year) if questions already exist.
   if(verifiedData){
-    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,finalYear);
+    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,finalYear,finalCode,finalUniversity);
     const jsonOutputEl=document.getElementById('jsonOutput');
     if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
   }
@@ -1906,7 +1909,7 @@ ${conflictQuestionsText}`;
       extractedData.courseYear=finalYear;
       extractedData.docTitle=docTitle;
 
-      generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
+      generatedJSON=buildJSON(verifiedData,docTitle,finalYear,finalCode,finalUniversity);
       processingStage=2; // verification done
     }
 
@@ -2297,7 +2300,7 @@ function saveQuestionInline(i,source){
   // that happen from this point on reflect the edit. Already-downloaded files are unaffected.
   const finalYear=document.getElementById('courseYear')?.value||extractedData?.courseYear||'';
   const docTitle=extractedData?.docTitle||'';
-  generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
+  generatedJSON=buildJSON(verifiedData,docTitle,finalYear,extractedData?.courseCode||'',extractedData?.courseUniversity||'');
   const jsonOutputEl=document.getElementById('jsonOutput');
   if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
 
@@ -2368,8 +2371,9 @@ function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&l
 // ════════════════════════════════════════════════════════
 //  BUILD JSON (EduGlobalForge format)
 // ════════════════════════════════════════════════════════
-function buildJSON(questions, courseTitle, courseYear){
+function buildJSON(questions, courseTitle, courseYear, courseCode, university){
   const slug=buildSlug(courseTitle,courseYear);
+  const categoryLabel=buildCategoryLabel(courseCode,university);
   const now=new Date().toISOString().replace('T',' ').substring(0,19);
   let globalId=1; let globalAnswerId=1;
 
@@ -2408,10 +2412,21 @@ function buildJSON(questions, courseTitle, courseYear){
       weight:"1",
       options:"",
       tag_title:null,
-      category:slug,
+      category:categoryLabel,
       answers,
     };
   });
+}
+
+function buildCategoryLabel(courseCode, university){
+  const code=(courseCode||'').trim().toUpperCase().replace(/\s+/g,'');
+  let uniShort=(university||'').trim();
+  uniShort=uniShort.replace(/\buniversity\s+of\b/i,'').replace(/\buniversity\b/i,'').trim().replace(/\s+/g,' ');
+  if(uniShort) uniShort+=' Uni';
+  if(code && uniShort) return `${code} (${uniShort})`;
+  if(code) return code;
+  if(uniShort) return uniShort;
+  return 'Uncategorized';
 }
 
 function buildSlug(title,year){
@@ -3109,7 +3124,33 @@ function initPqListingButton(qUrl, aUrl, basePrice) {
 }
 </script>
 
+<script>
+/* ── Post to AYS Questions (inlined) ── */
+const AYS_QUESTIONS_ENDPOINT = '/egf/v1/quiz-maker/questions';
+
+async function postToAysQuestions(){
+  if(!generatedJSON || !generatedJSON.length){
+    toast('No JSON yet — run extraction first','error');
+    return;
+  }
+  const btn=document.getElementById('postAysQuestionsBtn');
+  const setBusy=(label)=>{ if(btn){ btn.disabled=true; btn.dataset.origLabel=btn.dataset.origLabel||btn.innerHTML; btn.innerHTML=label; } };
+  const clearBusy=()=>{ if(btn){ btn.disabled=false; if(btn.dataset.origLabel) btn.innerHTML=btn.dataset.origLabel; } };
+
+  setBusy('📤 Posting to AYS…');
+  try{
+    const result=await wpProxyPost(AYS_QUESTIONS_ENDPOINT,{ questions: generatedJSON });
+    btn.innerHTML='<span class="jump-dot" style="background:#34D399"></span> Posted to AYS!';
+    btn.disabled=false;
+    toast(`Posted ${result.imported||generatedJSON.length} question(s) to AYS Questions`,'success');
+  }catch(err){
+    console.error('[ays] failed:',err);
+    clearBusy();
+    toast(`AYS post failed: ${err.message}`,'error');
+  }
+}
+</script>
+
 <script src="drive-push.js"></script>
 </body>
 </html>
-
