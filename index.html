@@ -295,7 +295,7 @@
     width:100%;background:var(--navy);border:1px solid var(--white-faint);
     border-radius:var(--radius-sm);padding:10px 12px;
     color:var(--white);font-family:var(--font-body);font-size:15px;
-    line-height:1.5;resize:vertical;outline:none;transition:var(--transition);
+    line-height:1.5;resize:none;overflow:hidden;outline:none;transition:var(--transition);
   }
   .q-edit-textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
   .q-edit-question{font-size:17px;margin-bottom:12px;min-height:64px}
@@ -2099,6 +2099,7 @@ function editQuestionInline(i,source){
           <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i},'only')">Cancel</button>
         </div>
       </div>`;
+    li.querySelectorAll('.q-edit-textarea').forEach(autoGrowTextarea);
     return;
   }
 
@@ -2128,12 +2129,32 @@ function editQuestionInline(i,source){
         <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i},'${source}')">Cancel</button>
       </div>
     </div>`;
+  li.querySelectorAll('.q-edit-textarea').forEach(autoGrowTextarea);
 }
 
 // Returns the sequential option letter for a given zero-based position (0->A, 1->B, ...).
 function labelForIndex(idx){
   return String.fromCharCode(65+idx);
 }
+
+// Grows a textarea's height to exactly fit its content, so the box expands as the
+// user types instead of showing an inner scrollbar. Resetting to 'auto' first lets
+// scrollHeight re-measure the natural content height (otherwise it would just keep
+// reporting the previously-set height). CSS min-height on each textarea variant
+// still acts as a floor for short text.
+function autoGrowTextarea(el){
+  if(!el) return;
+  el.style.height='auto';
+  el.style.height=el.scrollHeight+'px';
+}
+
+// One delegated listener (added once) handles every .q-edit-textarea, including ones
+// added later via "+ Add option" — no need to attach a listener per textarea.
+document.addEventListener('input',function(e){
+  if(e.target && e.target.classList && e.target.classList.contains('q-edit-textarea')){
+    autoGrowTextarea(e.target);
+  }
+});
 
 // Appends a new empty option row to the given options container (works for both the
 // "only" form, which has no radio, and the "answers" form, which does). Assigns a
@@ -2157,6 +2178,7 @@ function addOptionRow(containerId,source,radioName){
   html+=`<button type="button" class="q-edit-opt-remove" onclick="removeOptionRow('${containerId}',this)" title="Remove option">✕</button>`;
   row.innerHTML=html;
   container.appendChild(row);
+  autoGrowTextarea(row.querySelector('textarea'));
   relabelOptionRows(containerId);
 }
 
