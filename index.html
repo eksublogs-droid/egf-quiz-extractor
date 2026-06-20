@@ -290,6 +290,42 @@
   }
   .explanation-box p{font-size:14.5px;color:var(--white-dim);line-height:1.6}
 
+  /* ── PER-QUESTION EDIT MODE ─────────────────────────── */
+  .q-edit-btn{
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:var(--radius-sm);
+    padding:5px 12px;font-size:11.5px;font-family:var(--font-main);font-weight:600;
+    cursor:pointer;transition:var(--transition);margin-top:10px;
+  }
+  .q-edit-btn:hover{border-color:var(--blue);color:var(--blue)}
+  .q-edit-text{
+    width:100%;background:var(--navy);border:1px solid var(--blue-line);
+    border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:10px;
+    color:var(--white);font-family:var(--font-body);font-size:16px;
+    line-height:1.5;resize:vertical;outline:none;
+  }
+  .q-edit-text:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .q-edit-opt-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .q-edit-opt-row input[type="radio"]{flex-shrink:0;width:16px;height:16px;accent-color:var(--green)}
+  .q-edit-opt-row .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0;font-size:14px}
+  .q-edit-opt-row input[type="text"]{
+    flex:1;background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:8px 12px;
+    color:var(--white);font-family:var(--font-body);font-size:14.5px;outline:none;
+  }
+  .q-edit-opt-row input[type="text"]:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .q-edit-actions{display:flex;gap:8px;margin-top:12px}
+  .q-save-btn{
+    background:linear-gradient(135deg,#16a34a,var(--green));color:#fff;
+    border:none;border-radius:var(--radius-sm);padding:8px 16px;
+    font-size:12.5px;font-family:var(--font-main);font-weight:600;cursor:pointer;
+  }
+  .q-cancel-btn{
+    background:var(--navy-hover);border:1px solid var(--white-faint);
+    color:var(--white-dim);border-radius:var(--radius-sm);padding:8px 16px;
+    font-size:12.5px;font-family:var(--font-main);font-weight:600;cursor:pointer;
+  }
+
   /* ── JSON SECTION ───────────────────────────────────── */
   #jsonOutput{
     background:var(--navy);border:1px solid var(--white-faint);
@@ -1894,27 +1930,112 @@ function renderSection2(questions,page=1){
   const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
   pageItems.forEach((q,pi)=>{
     const i=startIdx+pi;
-    const li=document.createElement('li'); li.className='q-item';
-    const opts=q.options.map(o=>{
-      const isCorrect=o.label===q.correctLabel;
-      return `<div class="q-opt${isCorrect?' correct-opt':''}">
-        <span class="opt-label">${o.label}.</span>
-        <span class="opt-text">${escHtml(o.text)}</span>
-      </div>`;
-    }).join('');
-    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
-      <div class="q-content">
-        <div class="q-text">${escHtml(q.question)}</div>
-        <div class="q-options">${opts}</div>
-        <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
-        <div class="explanation-box">
-          <div class="exp-label">Explanation</div>
-          <p>${escHtml(q.explanation)}</p>
-        </div>
-      </div>`;
+    const li=document.createElement('li'); li.className='q-item'; li.id='qItem_'+i;
+    li.innerHTML=buildAnswerCardViewHTML(q,i);
     ul.appendChild(li);
   });
   renderPager('pagerAnswers',page,totalPages,(p)=>renderSection2(questions,p));
+}
+
+// ── Builds the normal (read-only) view of one question card ──
+function buildAnswerCardViewHTML(q,i){
+  const opts=q.options.map(o=>{
+    const isCorrect=o.label===q.correctLabel;
+    return `<div class="q-opt${isCorrect?' correct-opt':''}">
+      <span class="opt-label">${o.label}.</span>
+      <span class="opt-text">${escHtml(o.text)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+    <div class="q-content">
+      <div class="q-text">${escHtml(q.question)}</div>
+      <div class="q-options">${opts}</div>
+      <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
+      <div class="explanation-box">
+        <div class="exp-label">Explanation</div>
+        <p>${escHtml(q.explanation)}</p>
+      </div>
+      <button class="q-edit-btn" onclick="editQuestion(${i})">✎ Edit this question</button>
+    </div>`;
+}
+
+// ── Switches one question card into edit mode ──
+function editQuestion(i){
+  const q=verifiedData[i];
+  const li=document.getElementById('qItem_'+i);
+  if(!q||!li) return;
+  const optRows=q.options.map(o=>{
+    const checked=o.label===q.correctLabel?'checked':'';
+    return `<div class="q-edit-opt-row">
+      <input type="radio" name="correctOpt_${i}" value="${escAttr(o.label)}" ${checked} data-role="correctRadio"/>
+      <span class="opt-label">${escHtml(o.label)}.</span>
+      <input type="text" value="${escAttr(o.text)}" data-role="optText" data-label="${escAttr(o.label)}"/>
+    </div>`;
+  }).join('');
+  li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+    <div class="q-content">
+      <textarea class="q-edit-text" rows="3" data-role="questionText">${escHtml(q.question)}</textarea>
+      ${optRows}
+      <textarea class="q-edit-text" rows="2" data-role="explanationText" placeholder="Explanation">${escHtml(q.explanation)}</textarea>
+      <div class="q-edit-actions">
+        <button class="q-save-btn" onclick="saveQuestionEdit(${i})">Save</button>
+        <button class="q-cancel-btn" onclick="cancelQuestionEdit(${i})">Cancel</button>
+      </div>
+    </div>`;
+}
+
+// ── Cancels edit mode, restores the normal view without saving ──
+function cancelQuestionEdit(i){
+  const q=verifiedData[i];
+  const li=document.getElementById('qItem_'+i);
+  if(!q||!li) return;
+  li.innerHTML=buildAnswerCardViewHTML(q,i);
+}
+
+// ── Saves edits for ONE question only: updates verifiedData in memory,
+//    rebuilds generatedJSON, re-renders this card back to view mode.
+//    No AI call, no network request — pure in-memory update. ──
+function saveQuestionEdit(i){
+  const q=verifiedData[i];
+  const li=document.getElementById('qItem_'+i);
+  if(!q||!li) return;
+
+  const newQuestionText=li.querySelector('[data-role="questionText"]').value.trim();
+  const newExplanation=li.querySelector('[data-role="explanationText"]').value.trim();
+  const optTextInputs=li.querySelectorAll('[data-role="optText"]');
+  const correctRadio=li.querySelector('[data-role="correctRadio"]:checked');
+
+  if(!newQuestionText){ toast('Question text cannot be empty','error'); return; }
+  if(!correctRadio){ toast('Please select which option is correct','error'); return; }
+
+  // Update each option's text by matching on its original label
+  optTextInputs.forEach(input=>{
+    const label=input.dataset.label;
+    const opt=q.options.find(o=>o.label===label);
+    if(opt) opt.text=input.value.trim();
+  });
+
+  const newCorrectLabel=correctRadio.value;
+  const newCorrectOpt=q.options.find(o=>o.label===newCorrectLabel);
+
+  // Mutate the question object in place inside verifiedData
+  q.question=newQuestionText;
+  q.explanation=newExplanation;
+  q.correctLabel=newCorrectLabel;
+  q.correctText=newCorrectOpt?newCorrectOpt.text:q.correctText;
+
+  // Rebuild generatedJSON so JSON export / Drive push / PDF reflect the edit
+  if(extractedData){
+    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,extractedData.courseYear);
+  }
+  // Keep the JSON preview panel in sync if it's currently visible
+  const jsonOutputEl=document.getElementById('jsonOutput');
+  if(jsonOutputEl&&generatedJSON) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
+
+  // Re-render this single card back to normal view with the new data
+  li.innerHTML=buildAnswerCardViewHTML(q,i);
+
+  toast('Question '+(i+1)+' saved','success');
 }
 
 function renderPager(containerId,currentPage,totalPages,onChange){
