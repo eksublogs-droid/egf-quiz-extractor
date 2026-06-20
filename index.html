@@ -720,9 +720,6 @@
       <button class="jump-btn" id="pushDriveBtn" onclick="pushToDrive()">
         <span class="jump-dot" style="background:#34D399"></span> Push to Drive
       </button>
-      <button class="jump-btn" id="postAysQuestionsBtn" onclick="postToAysQuestions()">
-        <span class="jump-dot" style="background:#F5C842"></span> Post to AYS Questions
-      </button>
       <button class="jump-btn" id="createAysQuizBtn" onclick="createAysQuiz()">
         <span class="jump-dot" style="background:#a78bfa"></span> Post Questions + Create Quizzes
       </button>
@@ -3287,30 +3284,9 @@ function initPqListingButton(qUrl, aUrl, basePrice) {
 </script>
 
 <script>
-/* ── Post to AYS Questions (inlined) ── */
+/* AYS_QUESTIONS_ENDPOINT is used by createAysQuiz() below, which posts
+   questions then creates both quizzes in one click. */
 const AYS_QUESTIONS_ENDPOINT = '/egf/v1/quiz-maker/questions';
-
-async function postToAysQuestions(){
-  if(!generatedJSON || !generatedJSON.length){
-    toast('No JSON yet — run extraction first','error');
-    return;
-  }
-  const btn=document.getElementById('postAysQuestionsBtn');
-  const setBusy=(label)=>{ if(btn){ btn.disabled=true; btn.dataset.origLabel=btn.dataset.origLabel||btn.innerHTML; btn.innerHTML=label; } };
-  const clearBusy=()=>{ if(btn){ btn.disabled=false; if(btn.dataset.origLabel) btn.innerHTML=btn.dataset.origLabel; } };
-
-  setBusy('📤 Posting to AYS…');
-  try{
-    const result=await wpProxyPost(AYS_QUESTIONS_ENDPOINT,{ questions: generatedJSON });
-    btn.innerHTML='<span class="jump-dot" style="background:#34D399"></span> Posted to AYS!';
-    btn.disabled=false;
-    toast(`Posted ${result.imported||generatedJSON.length} question(s) to AYS Questions`,'success');
-  }catch(err){
-    console.error('[ays] failed:',err);
-    clearBusy();
-    toast(`AYS post failed: ${err.message}`,'error');
-  }
-}
 </script>
 
 <script>
