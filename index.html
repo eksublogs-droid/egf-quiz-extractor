@@ -290,41 +290,41 @@
   }
   .explanation-box p{font-size:14.5px;color:var(--white-dim);line-height:1.6}
 
-  /* ── PER-QUESTION EDIT MODE ─────────────────────────── */
+  /* ── QUESTION EDIT MODE (Section 2 / renderSection2) ──── */
+  .q-edit-textarea{
+    width:100%;background:var(--navy);border:1px solid var(--white-faint);
+    border-radius:var(--radius-sm);padding:10px 12px;
+    color:var(--white);font-family:var(--font-body);font-size:15px;
+    line-height:1.5;resize:vertical;outline:none;transition:var(--transition);
+  }
+  .q-edit-textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
+  .q-edit-question{font-size:17px;margin-bottom:12px;min-height:64px}
+  .q-edit-options{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
+  .q-edit-opt-row{display:flex;align-items:flex-start;gap:9px}
+  .q-edit-opt-row input[type="radio"]{margin-top:13px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+  .q-edit-opt-row .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0;padding-top:11px}
+  .q-edit-opt-row textarea{min-height:42px;flex:1}
+  .q-edit-explanation{margin-top:10px}
+  .q-edit-explanation textarea{min-height:64px;font-size:14.5px}
+  .q-edit-label{font-size:10px;font-family:var(--font-mono);color:var(--blue-bright);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px}
+  .q-edit-actions{display:flex;gap:10px;margin-top:14px}
   .q-edit-btn{
-    background:var(--navy-hover);border:1px solid var(--white-faint);
+    display:inline-flex;align-items:center;gap:6px;
+    border:none;border-radius:var(--radius-sm);
+    padding:8px 16px;font-size:12.5px;font-family:var(--font-main);
+    font-weight:600;cursor:pointer;transition:var(--transition);
+  }
+  .q-edit-save{background:linear-gradient(135deg,#16a34a,var(--green));color:#fff}
+  .q-edit-save:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(34,197,94,.3)}
+  .q-edit-cancel{background:var(--navy-hover);border:1px solid var(--white-faint);color:var(--white-dim)}
+  .q-edit-cancel:hover{border-color:var(--blue);color:var(--blue)}
+  .q-item-editbtn{
+    background:transparent;border:1px solid var(--white-faint);
     color:var(--white-dim);border-radius:var(--radius-sm);
-    padding:5px 12px;font-size:11.5px;font-family:var(--font-main);font-weight:600;
-    cursor:pointer;transition:var(--transition);margin-top:10px;
+    padding:4px 11px;font-size:11px;font-family:var(--font-main);font-weight:600;
+    cursor:pointer;transition:var(--transition);margin-top:8px;
   }
-  .q-edit-btn:hover{border-color:var(--blue);color:var(--blue)}
-  .q-edit-text{
-    width:100%;background:var(--navy);border:1px solid var(--blue-line);
-    border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:10px;
-    color:var(--white);font-family:var(--font-body);font-size:16px;
-    line-height:1.5;resize:vertical;outline:none;
-  }
-  .q-edit-text:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
-  .q-edit-opt-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-  .q-edit-opt-row input[type="radio"]{flex-shrink:0;width:16px;height:16px;accent-color:var(--green)}
-  .q-edit-opt-row .opt-label{color:var(--blue-bright);font-family:var(--font-mono);flex-shrink:0;font-size:14px}
-  .q-edit-opt-row input[type="text"]{
-    flex:1;background:var(--navy);border:1px solid var(--white-faint);
-    border-radius:var(--radius-sm);padding:8px 12px;
-    color:var(--white);font-family:var(--font-body);font-size:14.5px;outline:none;
-  }
-  .q-edit-opt-row input[type="text"]:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-glow)}
-  .q-edit-actions{display:flex;gap:8px;margin-top:12px}
-  .q-save-btn{
-    background:linear-gradient(135deg,#16a34a,var(--green));color:#fff;
-    border:none;border-radius:var(--radius-sm);padding:8px 16px;
-    font-size:12.5px;font-family:var(--font-main);font-weight:600;cursor:pointer;
-  }
-  .q-cancel-btn{
-    background:var(--navy-hover);border:1px solid var(--white-faint);
-    color:var(--white-dim);border-radius:var(--radius-sm);padding:8px 16px;
-    font-size:12.5px;font-family:var(--font-main);font-weight:600;cursor:pointer;
-  }
+  .q-item-editbtn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-glow)}
 
   /* ── JSON SECTION ───────────────────────────────────── */
   #jsonOutput{
@@ -650,6 +650,9 @@
           <label>Year / Session</label>
           <input type="text" id="courseYear" placeholder="Will be filled by AI..." disabled/>
         </div>
+      </div>
+      <div id="courseInfoSaveRow" style="display:none;margin-top:6px">
+        <button class="btn btn-secondary btn-sm" id="courseInfoSaveBtn" onclick="saveCourseInfo()">💾 Save Course Info</button>
       </div>
     </div>
 
@@ -1563,7 +1566,48 @@ function resetAll(){
     el.value='';
     el.disabled=true;
   });
+  document.getElementById('courseInfoSaveRow').style.display='none';
   document.getElementById('fileInput').value='';
+}
+
+// ════════════════════════════════════════════════════════
+//  SAVE COURSE INFO (in-memory only — no AI call, no network request)
+//  Lets the 7 course-info fields be updated after extraction without
+//  re-running the whole "Extract & Analyse" pipeline. Updates extractedData
+//  in place, rebuilds docTitle + generatedJSON, and refreshes the JSON panel
+//  so PDF / JSON / Drive / WPDM / PQ Listing downstream all use the new values
+//  from this point on. Already-downloaded files are unaffected.
+// ════════════════════════════════════════════════════════
+function saveCourseInfo(){
+  if(!extractedData){ toast('No course info to save yet — run extraction first','error'); return; }
+
+  const finalUniversity=document.getElementById('courseUniversity').value.trim();
+  const finalFaculty=document.getElementById('courseFaculty').value.trim();
+  const finalDepartment=document.getElementById('courseDepartment').value.trim();
+  const finalTitle=document.getElementById('courseTitle').value.trim()||'Unknown Course';
+  const finalCode=document.getElementById('courseCode').value.trim();
+  const finalSemester=document.getElementById('courseSemester').value.trim();
+  const finalYear=document.getElementById('courseYear').value.trim();
+
+  extractedData.courseUniversity=finalUniversity;
+  extractedData.courseFaculty=finalFaculty;
+  extractedData.courseDepartment=finalDepartment;
+  extractedData.courseTitle=finalTitle;
+  extractedData.courseCode=finalCode;
+  extractedData.courseSemester=finalSemester;
+  extractedData.courseYear=finalYear;
+
+  const docTitleParts=[finalUniversity,finalFaculty,finalDepartment,finalCode,finalTitle,finalSemester,finalYear].filter(Boolean);
+  extractedData.docTitle=docTitleParts.join(' · ');
+
+  // Rebuild generatedJSON (category slug depends on docTitle/year) if questions already exist.
+  if(verifiedData){
+    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,finalYear);
+    const jsonOutputEl=document.getElementById('jsonOutput');
+    if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
+  }
+
+  toast('Saved','success');
 }
 
 // ════════════════════════════════════════════════════════
@@ -1696,6 +1740,7 @@ Rules:
       document.getElementById('courseSemester').value=extracted.courseSemester||'';
       document.getElementById('courseYear').value=extracted.courseYear||'';
       ['courseUniversity','courseFaculty','courseDepartment','courseTitle','courseCode','courseSemester','courseYear'].forEach(id=>document.getElementById(id).disabled=false);
+      document.getElementById('courseInfoSaveRow').style.display='block';
 
       // Save extraction result so we can resume from here if verification fails
       extractedData={
@@ -1930,15 +1975,19 @@ function renderSection2(questions,page=1){
   const pageItems=questions.slice(startIdx,startIdx+QUESTIONS_PER_PAGE);
   pageItems.forEach((q,pi)=>{
     const i=startIdx+pi;
-    const li=document.createElement('li'); li.className='q-item'; li.id='qItem_'+i;
-    li.innerHTML=buildAnswerCardViewHTML(q,i);
-    ul.appendChild(li);
+    renderAnswerItem(i,q,ul);
   });
   renderPager('pagerAnswers',page,totalPages,(p)=>renderSection2(questions,p));
 }
 
-// ── Builds the normal (read-only) view of one question card ──
-function buildAnswerCardViewHTML(q,i){
+// Renders a single question <li> (normal/view mode) for Section 2 and appends it to `ul`.
+// Pulled out of renderSection2 so a single question can be re-rendered after an inline edit
+// without having to re-render the whole page/list.
+function renderAnswerItem(i,q,ul){
+  const li=document.createElement('li');
+  li.className='q-item';
+  li.id='qitem-answers-'+i;
+  li.dataset.qIndex=String(i);
   const opts=q.options.map(o=>{
     const isCorrect=o.label===q.correctLabel;
     return `<div class="q-opt${isCorrect?' correct-opt':''}">
@@ -1946,7 +1995,7 @@ function buildAnswerCardViewHTML(q,i){
       <span class="opt-text">${escHtml(o.text)}</span>
     </div>`;
   }).join('');
-  return `<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+  li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
     <div class="q-content">
       <div class="q-text">${escHtml(q.question)}</div>
       <div class="q-options">${opts}</div>
@@ -1955,87 +2004,127 @@ function buildAnswerCardViewHTML(q,i){
         <div class="exp-label">Explanation</div>
         <p>${escHtml(q.explanation)}</p>
       </div>
-      <button class="q-edit-btn" onclick="editQuestion(${i})">✎ Edit this question</button>
+      <button class="q-item-editbtn" onclick="editQuestionInline(${i})">✎ Edit</button>
     </div>`;
+  ul.appendChild(li);
 }
 
-// ── Switches one question card into edit mode ──
-function editQuestion(i){
+// ════════════════════════════════════════════════════════
+//  INLINE QUESTION EDITING (Section 2 / renderSection2 only)
+//  Pure in-memory edits to verifiedData — no AI call, no network request.
+// ════════════════════════════════════════════════════════
+
+// Swap a single question's <li> into edit mode: editable question text,
+// editable option text per option, a radio per option to pick the correct
+// answer, and an editable explanation textarea.
+function editQuestionInline(i){
+  if(!verifiedData || !verifiedData[i]) return;
   const q=verifiedData[i];
-  const li=document.getElementById('qItem_'+i);
-  if(!q||!li) return;
+  const li=document.getElementById('qitem-answers-'+i);
+  if(!li) return;
+
   const optRows=q.options.map(o=>{
     const checked=o.label===q.correctLabel?'checked':'';
     return `<div class="q-edit-opt-row">
-      <input type="radio" name="correctOpt_${i}" value="${escAttr(o.label)}" ${checked} data-role="correctRadio"/>
+      <input type="radio" name="qedit-correct-${i}" value="${escHtml(o.label)}" ${checked}/>
       <span class="opt-label">${escHtml(o.label)}.</span>
-      <input type="text" value="${escAttr(o.text)}" data-role="optText" data-label="${escAttr(o.label)}"/>
+      <textarea class="q-edit-textarea" data-opt-label="${escHtml(o.label)}">${escHtml(o.text)}</textarea>
     </div>`;
   }).join('');
+
   li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
     <div class="q-content">
-      <textarea class="q-edit-text" rows="3" data-role="questionText">${escHtml(q.question)}</textarea>
-      ${optRows}
-      <textarea class="q-edit-text" rows="2" data-role="explanationText" placeholder="Explanation">${escHtml(q.explanation)}</textarea>
+      <div class="q-edit-label">Question</div>
+      <textarea class="q-edit-textarea q-edit-question" id="qedit-question-${i}">${escHtml(q.question)}</textarea>
+      <div class="q-edit-label">Options &amp; correct answer</div>
+      <div class="q-edit-options" id="qedit-options-${i}">${optRows}</div>
+      <div class="q-edit-explanation">
+        <div class="q-edit-label">Explanation</div>
+        <textarea class="q-edit-textarea" id="qedit-explanation-${i}">${escHtml(q.explanation)}</textarea>
+      </div>
       <div class="q-edit-actions">
-        <button class="q-save-btn" onclick="saveQuestionEdit(${i})">Save</button>
-        <button class="q-cancel-btn" onclick="cancelQuestionEdit(${i})">Cancel</button>
+        <button class="q-edit-btn q-edit-save" onclick="saveQuestionInline(${i})">✓ Save</button>
+        <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i})">Cancel</button>
       </div>
     </div>`;
 }
 
-// ── Cancels edit mode, restores the normal view without saving ──
+// Cancel: just re-render the question from verifiedData (untouched), discarding any typed edits.
 function cancelQuestionEdit(i){
-  const q=verifiedData[i];
-  const li=document.getElementById('qItem_'+i);
-  if(!q||!li) return;
-  li.innerHTML=buildAnswerCardViewHTML(q,i);
+  if(!verifiedData || !verifiedData[i]) return;
+  const li=document.getElementById('qitem-answers-'+i);
+  if(!li) return;
+  const ul=li.parentNode;
+  const next=li.nextSibling;
+  li.remove();
+  renderAnswerItem(i,verifiedData[i],ul);
+  // renderAnswerItem appends to the end of ul; move the freshly-rendered li back into its
+  // original position so question order in the list stays correct.
+  const fresh=document.getElementById('qitem-answers-'+i);
+  if(fresh && next) ul.insertBefore(fresh,next);
 }
 
-// ── Saves edits for ONE question only: updates verifiedData in memory,
-//    rebuilds generatedJSON, re-renders this card back to view mode.
-//    No AI call, no network request — pure in-memory update. ──
-function saveQuestionEdit(i){
+// Save: reads the edit form for question i, writes the changes into verifiedData[i] in place,
+// rebuilds generatedJSON from the updated verifiedData, re-renders that question back to
+// normal view, refreshes the JSON output panel, and shows a "Saved" toast.
+// Pure in-memory update — no AI call, no network request.
+function saveQuestionInline(i){
+  if(!verifiedData || !verifiedData[i]) return;
   const q=verifiedData[i];
-  const li=document.getElementById('qItem_'+i);
-  if(!q||!li) return;
 
-  const newQuestionText=li.querySelector('[data-role="questionText"]').value.trim();
-  const newExplanation=li.querySelector('[data-role="explanationText"]').value.trim();
-  const optTextInputs=li.querySelectorAll('[data-role="optText"]');
-  const correctRadio=li.querySelector('[data-role="correctRadio"]:checked');
+  const questionEl=document.getElementById('qedit-question-'+i);
+  const explanationEl=document.getElementById('qedit-explanation-'+i);
+  const optionsContainer=document.getElementById('qedit-options-'+i);
+  if(!questionEl||!explanationEl||!optionsContainer) return;
 
+  const newQuestionText=questionEl.value.trim();
   if(!newQuestionText){ toast('Question text cannot be empty','error'); return; }
-  if(!correctRadio){ toast('Please select which option is correct','error'); return; }
 
-  // Update each option's text by matching on its original label
-  optTextInputs.forEach(input=>{
-    const label=input.dataset.label;
-    const opt=q.options.find(o=>o.label===label);
-    if(opt) opt.text=input.value.trim();
+  const optTextareas=Array.from(optionsContainer.querySelectorAll('textarea[data-opt-label]'));
+  const newOptions=q.options.map(o=>{
+    const ta=optTextareas.find(t=>t.dataset.optLabel===o.label);
+    const newText=ta?ta.value.trim():o.text;
+    return{ label:o.label, text:newText };
   });
-
-  const newCorrectLabel=correctRadio.value;
-  const newCorrectOpt=q.options.find(o=>o.label===newCorrectLabel);
-
-  // Mutate the question object in place inside verifiedData
-  q.question=newQuestionText;
-  q.explanation=newExplanation;
-  q.correctLabel=newCorrectLabel;
-  q.correctText=newCorrectOpt?newCorrectOpt.text:q.correctText;
-
-  // Rebuild generatedJSON so JSON export / Drive push / PDF reflect the edit
-  if(extractedData){
-    generatedJSON=buildJSON(verifiedData,extractedData.docTitle,extractedData.courseYear);
+  for(const o of newOptions){
+    if(!o.text){ toast('Option text cannot be empty','error'); return; }
   }
-  // Keep the JSON preview panel in sync if it's currently visible
+
+  const checkedRadio=optionsContainer.querySelector(`input[name="qedit-correct-${i}"]:checked`);
+  if(!checkedRadio){ toast('Pick a correct answer','error'); return; }
+  const newCorrectLabel=checkedRadio.value;
+  const newCorrectOpt=newOptions.find(o=>o.label===newCorrectLabel);
+  const newCorrectText=newCorrectOpt?newCorrectOpt.text:q.correctText;
+  const newExplanation=explanationEl.value.trim();
+
+  // Commit the edits into verifiedData (in place — same array, same object references for
+  // unedited questions, so nothing else downstream needs to change).
+  q.question=newQuestionText;
+  q.options=newOptions;
+  q.correctLabel=newCorrectLabel;
+  q.correctText=newCorrectText;
+  q.explanation=newExplanation;
+
+  // Rebuild generatedJSON from the updated verifiedData so PDF/JSON/Drive/WPDM/PQ downloads
+  // that happen from this point on reflect the edit. Already-downloaded files are unaffected.
+  const finalYear=document.getElementById('courseYear')?.value||extractedData?.courseYear||'';
+  const docTitle=extractedData?.docTitle||'';
+  generatedJSON=buildJSON(verifiedData,docTitle,finalYear);
   const jsonOutputEl=document.getElementById('jsonOutput');
-  if(jsonOutputEl&&generatedJSON) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
+  if(jsonOutputEl) jsonOutputEl.textContent=JSON.stringify(generatedJSON,null,2);
 
-  // Re-render this single card back to normal view with the new data
-  li.innerHTML=buildAnswerCardViewHTML(q,i);
+  // Re-render this question back to normal view (in place, preserving its position).
+  const li=document.getElementById('qitem-answers-'+i);
+  if(li){
+    const ul=li.parentNode;
+    const next=li.nextSibling;
+    li.remove();
+    renderAnswerItem(i,q,ul);
+    const fresh=document.getElementById('qitem-answers-'+i);
+    if(fresh && next) ul.insertBefore(fresh,next);
+  }
 
-  toast('Question '+(i+1)+' saved','success');
+  toast('Saved','success');
 }
 
 function renderPager(containerId,currentPage,totalPages,onChange){
