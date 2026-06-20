@@ -2049,17 +2049,41 @@ function restoreItemViewBothTabs(i,question){
   restoreItemView(i,'qitem-answers-',renderAnswerItem,question);
 }
 
-// Swap a single question's <li> into edit mode: editable question text,
-// editable option text per option, a radio per option to pick the correct
-// answer, and an editable explanation textarea.
-// `source` is 'only' or 'answers' — identifies which tab's li to swap (the other
-// tab's copy of this question, if present, is left alone until Save/Cancel).
+// Swap a single question's <li> into edit mode.
+// `source==='answers'` (Answers + Explanations tab): full form — editable question
+// text, editable option text, a radio per option to pick the correct answer, and
+// an editable explanation textarea.
+// `source==='only'` (Questions Only tab): reduced form — editable question text and
+// editable option text ONLY. No correct-answer picker and no explanation box, so
+// editing from this tab never reveals the answer key.
 function editQuestionInline(i,source){
   if(!verifiedData || !verifiedData[i]) return;
   const q=verifiedData[i];
   const domId=(source==='only'?'qitem-only-':'qitem-answers-')+i;
   const li=document.getElementById(domId);
   if(!li) return;
+
+  if(source==='only'){
+    const optRowsOnly=q.options.map(o=>{
+      return `<div class="q-edit-opt-row q-edit-opt-row-noradio">
+        <span class="opt-label">${escHtml(o.label)}.</span>
+        <textarea class="q-edit-textarea" data-opt-label="${escHtml(o.label)}">${escHtml(o.text)}</textarea>
+      </div>`;
+    }).join('');
+
+    li.innerHTML=`<div class="q-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="q-content">
+        <div class="q-edit-label">Question</div>
+        <textarea class="q-edit-textarea q-edit-question" id="qedit-question-only-${i}">${escHtml(q.question)}</textarea>
+        <div class="q-edit-label">Options</div>
+        <div class="q-edit-options" id="qedit-options-only-${i}">${optRowsOnly}</div>
+        <div class="q-edit-actions">
+          <button class="q-edit-btn q-edit-save" onclick="saveQuestionInline(${i},'only')">✓ Save</button>
+          <button class="q-edit-btn q-edit-cancel" onclick="cancelQuestionEdit(${i},'only')">Cancel</button>
+        </div>
+      </div>`;
+    return;
+  }
 
   const optRows=q.options.map(o=>{
     const checked=o.label===q.correctLabel?'checked':'';
@@ -2103,14 +2127,18 @@ function cancelQuestionEdit(i,source){
 // Only and Answers + Explanations tabs (since they share the same data), refreshes
 // the JSON output panel, and shows a "Saved" toast.
 // Pure in-memory update — no AI call, no network request.
+//
+// When source==='only', the form has no correct-answer radio and no explanation
+// box (Questions Only must never expose the answer key while editing), so this
+// only updates question text + option text and leaves correctLabel/correctText/
+// explanation exactly as they were.
 function saveQuestionInline(i,source){
   if(!verifiedData || !verifiedData[i]) return;
   const q=verifiedData[i];
 
   const questionEl=document.getElementById('qedit-question-'+source+'-'+i);
-  const explanationEl=document.getElementById('qedit-explanation-'+source+'-'+i);
   const optionsContainer=document.getElementById('qedit-options-'+source+'-'+i);
-  if(!questionEl||!explanationEl||!optionsContainer) return;
+  if(!questionEl||!optionsContainer) return;
 
   const newQuestionText=questionEl.value.trim();
   if(!newQuestionText){ toast('Question text cannot be empty','error'); return; }
@@ -2125,22 +2153,33 @@ function saveQuestionInline(i,source){
     if(!o.text){ toast('Option text cannot be empty','error'); return; }
   }
 
-  const checkedRadio=optionsContainer.querySelector(`input[name="qedit-correct-${source}-${i}"]:checked`);
-  if(!checkedRadio){ toast('Pick a correct answer','error'); return; }
-  const newCorrectLabel=checkedRadio.value;
-  const newCorrectOpt=newOptions.find(o=>o.label===newCorrectLabel);
-  const newCorrectText=newCorrectOpt?newCorrectOpt.text:q.correctText;
-  const newExplanation=explanationEl.value.trim();
-
-  // Commit the edits into verifiedData (in place — same array, same object references for
-  // unedited questions, so nothing else downstream needs to change). Since both tabs render
-  // from this same verifiedData array, this single update is what makes the edit show up
-  // in both Questions Only and Answers + Explanations.
+  // Commit question text + option text — common to both forms.
   q.question=newQuestionText;
   q.options=newOptions;
-  q.correctLabel=newCorrectLabel;
-  q.correctText=newCorrectText;
-  q.explanation=newExplanation;
+
+  if(source==='only'){
+    // Reduced form: no correct-answer radio, no explanation box on screen.
+    // Keep the existing correct answer pointing at the right option text in case
+    // the option's wording changed (label stays the same either way), and leave
+    // correctLabel/explanation untouched since they were never shown or edited here.
+    const stillCorrectOpt=newOptions.find(o=>o.label===q.correctLabel);
+    if(stillCorrectOpt) q.correctText=stillCorrectOpt.text;
+  } else {
+    // Full form (Answers + Explanations): also read correct-answer radio + explanation.
+    const explanationEl=document.getElementById('qedit-explanation-'+source+'-'+i);
+    if(!explanationEl) return;
+
+    const checkedRadio=optionsContainer.querySelector(`input[name="qedit-correct-${source}-${i}"]:checked`);
+    if(!checkedRadio){ toast('Pick a correct answer','error'); return; }
+    const newCorrectLabel=checkedRadio.value;
+    const newCorrectOpt=newOptions.find(o=>o.label===newCorrectLabel);
+    const newCorrectText=newCorrectOpt?newCorrectOpt.text:q.correctText;
+    const newExplanation=explanationEl.value.trim();
+
+    q.correctLabel=newCorrectLabel;
+    q.correctText=newCorrectText;
+    q.explanation=newExplanation;
+  }
 
   // Rebuild generatedJSON from the updated verifiedData so PDF/JSON/Drive/WPDM/PQ downloads
   // that happen from this point on reflect the edit. Already-downloaded files are unaffected.
