@@ -723,6 +723,9 @@
       <button class="jump-btn" id="postAysQuestionsBtn" onclick="postToAysQuestions()">
         <span class="jump-dot" style="background:#F5C842"></span> Post to AYS Questions
       </button>
+      <button class="jump-btn" id="createAysQuizBtn" onclick="createAysQuiz()">
+        <span class="jump-dot" style="background:#a78bfa"></span> Create Quizzes (AYS)
+      </button>
     </div>
 
     <!-- SECTION 1: Questions Only -->
@@ -3306,6 +3309,53 @@ async function postToAysQuestions(){
     console.error('[ays] failed:',err);
     clearBusy();
     toast(`AYS post failed: ${err.message}`,'error');
+  }
+}
+</script>
+
+<script>
+/* ── Create AYS Quizzes (Q&A Review Mode + Quiz Mode), one click ── */
+const AYS_QUIZ_ENDPOINT = '/egf/v1/quiz-maker/quiz';
+
+async function createAysQuiz(){
+  if(!generatedJSON || !generatedJSON.length){
+    toast('No JSON yet — run extraction first','error');
+    return;
+  }
+  const btn=document.getElementById('createAysQuizBtn');
+  const setBusy=(label)=>{ if(btn){ btn.disabled=true; btn.dataset.origLabel=btn.dataset.origLabel||btn.innerHTML; btn.innerHTML=label; } };
+  const clearBusy=()=>{ if(btn){ btn.disabled=false; if(btn.dataset.origLabel) btn.innerHTML=btn.dataset.origLabel; } };
+
+  const title = extractedData?.docTitle || extractedData?.courseTitle || 'Quiz';
+  const category = generatedJSON[0]?.category || title;
+
+  setBusy('📤 Posting questions…');
+  try{
+    // Step 1: post questions first so we get back real DB question_ids
+    const qResult = await wpProxyPost(AYS_QUESTIONS_ENDPOINT,{ questions: generatedJSON });
+    const questionIds = qResult.question_ids || [];
+    if(!questionIds.length){
+      throw new Error('No question_ids returned from questions endpoint');
+    }
+
+    // Step 2: create both quizzes (Q&A Review Mode + Quiz Mode) from those IDs
+    setBusy('🧩 Creating quizzes…');
+    const quizResult = await wpProxyPost(AYS_QUIZ_ENDPOINT,{
+      title,
+      category,
+      question_ids: questionIds
+    });
+
+    btn.innerHTML='<span class="jump-dot" style="background:#34D399"></span> Quizzes Created!';
+    btn.disabled=false;
+
+    const qaUrl = quizResult.qa_review?.preview_url || '';
+    const quizUrl = quizResult.quiz_mode?.preview_url || '';
+    toast(`Quizzes created!\nQ&A Review Mode: ${qaUrl}\nQuiz Mode: ${quizUrl}`,'success');
+  }catch(err){
+    console.error('[ays-quiz] failed:',err);
+    clearBusy();
+    toast(`Quiz creation failed: ${err.message}`,'error');
   }
 }
 </script>
