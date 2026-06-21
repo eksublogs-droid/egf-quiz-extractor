@@ -717,13 +717,15 @@
       <button class="jump-btn" id="tabBtn_sectionJSON" onclick="showTab('sectionJSON')">
         <span class="jump-dot s3dot"></span> JSON Export
       </button>
-      <button class="jump-btn" id="pushDriveBtn" onclick="pushToDrive()">
-        <span class="jump-dot" style="background:#34D399"></span> Push to Drive
-      </button>
       <button class="jump-btn" id="createAysQuizBtn" onclick="createAysQuiz()">
         <span class="jump-dot" style="background:#a78bfa"></span> Post Questions + Create Quizzes
       </button>
     </div>
+
+    <!-- Persistent final-links box: stays visible (no auto-dismiss) once
+         createAysQuiz() finishes, showing the Uni Pq Quiz and Uni PQ
+         Download post links so they can be tapped or copied at any time. -->
+    <div id="finalLinksBox" style="display:none;margin-top:16px;padding:16px;border-radius:var(--radius-sm);background:var(--navy-card);border:1px solid var(--blue-line)"></div>
 
     <!-- SECTION 1: Questions Only -->
     <div id="sectionQuestions">
@@ -3040,47 +3042,6 @@ async function createWpdmPackage({ title, linkLabel, fileUrl, fileName, fileSize
   return { ...pkg, pageUrl: pageUrl || fileUrl, sourceFileUrl: fileUrl };
 }
 
-async function initWpdmButton(qResult, aResult, qBlob, aBlob) {
-  const existing = document.getElementById('wpdmPushBtn');
-  if (existing) existing.remove();
-  const driveBtn = document.getElementById('pushDriveBtn');
-  const jumpNav  = document.getElementById('jumpNav');
-  if (!jumpNav && !driveBtn) {
-    console.error('[wpdm] DOM anchors missing');
-    return;
-  }
-  const btn = document.createElement('button');
-  btn.id        = 'wpdmPushBtn';
-  btn.className = 'jump-btn';
-  btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
-  btn.onclick = async () => {
-    btn.disabled = true;
-    btn.innerHTML = '🔓 Setting permissions…';
-    try {
-      await Promise.all([makePublic(qResult.id), makePublic(aResult.id)]);
-      const qUrl = driveDownloadUrl(qResult.id);
-      const aUrl = driveDownloadUrl(aResult.id);
-      const pkgAcronym = extractedData?.courseAcronym || deriveAcronym(extractedData?.courseUniversity || '');
-      btn.innerHTML = '📦 Creating packages…';
-      const [qPkg, aPkg] = await Promise.all([
-        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${pkgAcronym}`.trim() + ' — Ques Only', linkLabel: 'Download Past Questions (No Answers)', fileUrl: qUrl, fileName: qResult.name, fileSize: qBlob.size, basePrice: 0 }),
-        createWpdmPackage({ title: `${extractedData?.courseCode||''} (${extractedData?.courseSemester||''}, ${extractedData?.courseYear||''}) | ${pkgAcronym}`.trim() + ' — Q+A', linkLabel: 'Download Past Questions with Answers', fileUrl: aUrl, fileName: aResult.name, fileSize: aBlob.size, basePrice: 200 })
-      ]);
-      btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Packages Created!';
-      btn.disabled = false;
-      toast(`WPDM packages created!\n• ${qPkg.title || qResult.name}\n• ${aPkg.title || aResult.name}`, 'success');
-      initPqListingButton(qPkg.pageUrl, aPkg.pageUrl, 200);
-    } catch (err) {
-      console.error('[wpdm] failed:', err);
-      btn.innerHTML = '<span class="jump-dot" style="background:#a78bfa"></span> Create WPDM Packages';
-      btn.disabled = false;
-      toast(`WPDM push failed: ${err.message}`, 'error');
-    }
-  };
-  const container = jumpNav || driveBtn.parentNode;
-  container.appendChild(btn);
-  console.log('[wpdm] Button injected into', container.id);
-}
 </script>
 <script>
 /* ── PQ Listing Publish (inlined) ── */
@@ -3196,22 +3157,29 @@ function pqlDeriveLevel(courseCode) {
   return `${match[1]}00 Level`;
 }
 
-function pqlBuildTitle() {
-  const code = extractedData?.courseCode || '';
-  const uni  = extractedData?.courseAcronym || deriveAcronym(extractedData?.courseUniversity || '');
-  const fac  = extractedData?.courseFaculty || '';
+function pqlBuildTitle(course) {
+  const c = course || extractedData || {};
+  const code = c.courseCode || '';
+  const uni  = c.courseAcronym || deriveAcronym(c.courseUniversity || '');
+  const fac  = c.courseFaculty || '';
   const lvl  = pqlDeriveLevel(code) || '';
-  const sem  = extractedData?.courseSemester || '';
+  const sem  = c.courseSemester || '';
   return `${code} – ${uni} – ${fac} – ${lvl} – ${sem} – Past Questions`.replace(/\s*–\s*–/g, ' –').trim();
 }
 
-async function publishPqListing(qUrl, aUrl, basePrice) {
-  const courseCode  = extractedData?.courseCode || '';
-  const courseTitle = extractedData?.courseTitle || '';
-  const university  = extractedData?.courseUniversity || '';
-  const faculty     = extractedData?.courseFaculty || '';
-  const semester    = extractedData?.courseSemester || '';
-  const year         = extractedData?.courseYear || '';
+// `course` is an optional snapshot of the course-info fields (see
+// courseSnapshot in createAysQuiz). If omitted, falls back to reading the
+// live extractedData global directly — kept for backward compatibility,
+// but the real call site in createAysQuiz always passes a snapshot so
+// this function is immune to extractedData changing/resetting mid-run.
+async function publishPqListing(qUrl, aUrl, basePrice, course) {
+  const c = course || extractedData || {};
+  const courseCode  = c.courseCode || '';
+  const courseTitle = c.courseTitle || '';
+  const university  = c.courseUniversity || '';
+  const faculty     = c.courseFaculty || '';
+  const semester    = c.courseSemester || '';
+  const year         = c.courseYear || '';
   const level        = pqlDeriveLevel(courseCode);
 
   const [questionTypeId, semesterId, yearId, levelId, facultyId, universityId] = await Promise.all([
@@ -3224,7 +3192,7 @@ async function publishPqListing(qUrl, aUrl, basePrice) {
   ]);
 
   const body = {
-    title: pqlBuildTitle(),
+    title: pqlBuildTitle(c),
     status: 'publish',
     meta: {
       course_code: courseCode,
@@ -3247,39 +3215,79 @@ async function publishPqListing(qUrl, aUrl, basePrice) {
   return result;
 }
 
-function initPqListingButton(qUrl, aUrl, basePrice) {
-  const existing = document.getElementById('pqlPublishBtn');
-  if (existing) existing.remove();
 
-  const wpdmBtn = document.getElementById('wpdmPushBtn');
-  const jumpNav = document.getElementById('jumpNav');
-  const container = jumpNav || (wpdmBtn ? wpdmBtn.parentNode : null);
-  if (!container) {
-    console.error('[pql] DOM anchor missing');
-    return;
-  }
+/* ── Uni Pq Quiz listing (separate post type from Uni PQ Download) ──
+   Post type REST base: uni-pq-quiz (hyphenated — confirmed via
+   /wp-json/wp/v2/types). Same six taxonomies as uni_pq_download
+   (question-type, semester, session-year, level, faculty, university),
+   reusing pqlGetOrCreateTermId()/pqlTermCache as-is — terms are shared
+   across post types, not duplicated.
 
-  const btn = document.createElement('button');
-  btn.id        = 'pqlPublishBtn';
-  btn.className = 'jump-btn';
-  btn.innerHTML = '<span class="jump-dot" style="background:#fbbf24"></span> Publish PQ Listing';
-  btn.onclick = async () => {
-    btn.disabled = true;
-    btn.innerHTML = '📝 Publishing listing…';
-    try {
-      const result = await publishPqListing(qUrl, aUrl, basePrice);
-      btn.innerHTML = '<span class="jump-dot" style="background:#34D399"></span> Listing Published!';
-      btn.disabled = false;
-      toast(`PQ Listing published!\n${result.title?.rendered || result.title || 'View on site'}\n${result.link || ''}`, 'success');
-    } catch (err) {
-      console.error('[pql] failed:', err);
-      btn.innerHTML = '<span class="jump-dot" style="background:#fbbf24"></span> Publish PQ Listing';
-      btn.disabled = false;
-      toast(`PQ Listing publish failed: ${err.message}`, 'error');
-    }
+   Meta fields (confirmed via /wp-json/wp/v2/uni-pq-quiz/{id} on a real
+   published post — course_code, course_title, link_for_qampa_review_mode,
+   link_for_quiz_mode all appeared populated under "meta"):
+     course_code
+     course_title
+     link_for_qampa_review_mode
+     link_for_quiz_mode
+   These are JetEngine custom fields; "Show in Rest API" was enabled per
+   field (was OFF by default) so they can be written via a normal REST
+   POST body, same as core meta. */
+const UNI_PQ_QUIZ_POST_TYPE = 'uni-pq-quiz';
+
+function pqlBuildQuizTitle(course) {
+  const c = course || extractedData || {};
+  const code = c.courseCode || '';
+  const uni  = c.courseAcronym || deriveAcronym(c.courseUniversity || '');
+  const year = c.courseYear || '';
+  // Matches the real pattern found on existing published posts, e.g.
+  // "Gey 101 Eksu 2020 PQ QUIZ AND QA" / "Phy 201 Eksu 2020 PQ QUIZ AND QA"
+  return `${code} ${uni} ${year} PQ QUIZ AND QA`.replace(/\s+/g, ' ').trim();
+}
+
+// `course` is an optional snapshot of the course-info fields (see
+// courseSnapshot in createAysQuiz). If omitted, falls back to reading the
+// live extractedData global directly — kept for backward compatibility,
+// but the real call site in createAysQuiz always passes a snapshot so
+// this function is immune to extractedData changing/resetting mid-run.
+async function publishUniPqQuiz(qaUrl, quizUrl, course) {
+  const c = course || extractedData || {};
+  const courseCode  = c.courseCode || '';
+  const courseTitle = c.courseTitle || '';
+  const university  = c.courseUniversity || '';
+  const faculty     = c.courseFaculty || '';
+  const semester    = c.courseSemester || '';
+  const year        = c.courseYear || '';
+  const level       = pqlDeriveLevel(courseCode);
+
+  const [questionTypeId, semesterId, yearId, levelId, facultyId, universityId] = await Promise.all([
+    pqlGetOrCreateTermId('question-type', 'Obj'),
+    pqlGetOrCreateTermId('semester', semester),
+    pqlGetOrCreateTermId('session-year', year),
+    pqlGetOrCreateTermId('level', level),
+    pqlGetOrCreateTermId('faculty', faculty),
+    pqlGetOrCreateTermId('university', university)
+  ]);
+
+  const body = {
+    title: pqlBuildQuizTitle(c),
+    status: 'publish',
+    meta: {
+      course_code: courseCode,
+      course_title: courseTitle,
+      link_for_qampa_review_mode: qaUrl,
+      link_for_quiz_mode: quizUrl
+    },
+    'question-type': questionTypeId ? [questionTypeId] : [],
+    'semester': semesterId ? [semesterId] : [],
+    'session-year': yearId ? [yearId] : [],
+    'level': levelId ? [levelId] : [],
+    'faculty': facultyId ? [facultyId] : [],
+    'university': universityId ? [universityId] : []
   };
-  container.appendChild(btn);
-  console.log('[pql] Button injected into', container.id);
+
+  const result = await wpProxyPost(`/wp/v2/${UNI_PQ_QUIZ_POST_TYPE}`, body);
+  return result;
 }
 </script>
 
@@ -3290,8 +3298,47 @@ const AYS_QUESTIONS_ENDPOINT = '/egf/v1/quiz-maker/questions';
 </script>
 
 <script>
-/* ── Create AYS Quizzes (Q&A Review Mode + Quiz Mode), one click ── */
+/* ── Create AYS Quizzes (Q&A Review Mode + Quiz Mode), one click ──
+   FULL COMBINED FLOW — merges what used to be 4 separate manual button
+   clicks (Push to Drive → Create WPDM Packages → Publish PQ Listing →
+   Post Questions + Create Quizzes) into this single function, run in
+   the same order the original chain required (each step's real output
+   feeds the next step's real input — none of this is reordered).
+*/
 const AYS_QUIZ_ENDPOINT = '/egf/v1/quiz-maker/quiz';
+
+// Renders (or updates) the persistent results box. Does NOT auto-hide —
+// stays on the page until the next run replaces it. Each link is shown
+// independently: if one post succeeded and the other failed, the
+// succeeded one still appears with a working link, and the failed one
+// shows its error instead of disappearing silently.
+function renderFinalLinksBox({ uniPqQuizResult, uniPqQuizError, uniPqDownloadResult, uniPqDownloadError }){
+  const box = document.getElementById('finalLinksBox');
+  if(!box) return;
+
+  const rowHtml = (label, result, err) => {
+    if(result && result.link){
+      return `
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--white-dim);margin-bottom:4px">${label}</div>
+          <a href="${escAttr(result.link)}" target="_blank" rel="noopener"
+             style="color:#34D399;font-size:13px;word-break:break-all;text-decoration:underline">${escHtml(result.link)}</a>
+        </div>`;
+    }
+    return `
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--white-dim);margin-bottom:4px">${label}</div>
+        <div style="color:#f87171;font-size:13px">Failed: ${escHtml(err?.message || 'unknown error')}</div>
+      </div>`;
+  };
+
+  box.innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--white);margin-bottom:12px">✅ Final Links</div>
+    ${rowHtml('Uni Pq Quiz listing', uniPqQuizResult, uniPqQuizError)}
+    ${rowHtml('Uni PQ Download listing', uniPqDownloadResult, uniPqDownloadError)}
+  `;
+  box.style.display = 'block';
+}
 
 async function createAysQuiz(){
   if(!generatedJSON || !generatedJSON.length){
@@ -3302,36 +3349,131 @@ async function createAysQuiz(){
   const setBusy=(label)=>{ if(btn){ btn.disabled=true; btn.dataset.origLabel=btn.dataset.origLabel||btn.innerHTML; btn.innerHTML=label; } };
   const clearBusy=()=>{ if(btn){ btn.disabled=false; if(btn.dataset.origLabel) btn.innerHTML=btn.dataset.origLabel; } };
 
-  const title = extractedData?.docTitle || extractedData?.courseTitle || 'Quiz';
-  const category = generatedJSON[0]?.category || title;
+  // Snapshot course info ONCE, right now, before any long-running async
+  // work starts. This whole run (PDF generation → Drive upload → WPDM →
+  // quizzes → both listing posts) can take a while; if the person uploads
+  // new images or hits Reset partway through, the live `extractedData`
+  // global would change/null-out underneath us. Every step below reads
+  // from this frozen snapshot instead of the live global, so a run either
+  // uses the course info it started with, or fails — it never silently
+  // mixes old and new course data.
+  const courseSnapshot = {
+    courseCode:       extractedData?.courseCode || '',
+    courseTitle:       extractedData?.courseTitle || '',
+    courseUniversity:  extractedData?.courseUniversity || '',
+    courseAcronym:     extractedData?.courseAcronym || '',
+    courseFaculty:     extractedData?.courseFaculty || '',
+    courseDepartment:  extractedData?.courseDepartment || '',
+    courseSemester:    extractedData?.courseSemester || '',
+    courseYear:        extractedData?.courseYear || '',
+    docTitle:           extractedData?.docTitle || extractedData?.courseTitle || 'Quiz'
+  };
+  const questionsSnapshot = generatedJSON;
 
-  setBusy('📤 Posting questions…');
+  const title = courseSnapshot.docTitle;
+  const category = questionsSnapshot[0]?.category || title;
+
   try{
-    // Step 1: post questions first so we get back real DB question_ids
-    const qResult = await wpProxyPost(AYS_QUESTIONS_ENDPOINT,{ questions: generatedJSON });
-    const questionIds = qResult.question_ids || [];
+    // ════════════════════════════════════════════════════════
+    // PHASE 1 — Files & packages (was: Push to Drive + Create WPDM Packages)
+    // ════════════════════════════════════════════════════════
+    setBusy('📦 Preparing files & packages…');
+
+    const university  = courseSnapshot.courseUniversity;
+    const faculty      = courseSnapshot.courseFaculty;
+    const department   = courseSnapshot.courseDepartment;
+    const semester      = courseSnapshot.courseSemester;
+    const docTitle      = courseSnapshot.docTitle;
+    const year           = courseSnapshot.courseYear;
+    const courseCode    = courseSnapshot.courseCode;
+    const pkgAcronym    = courseSnapshot.courseAcronym || deriveAcronym(university);
+
+    // 1a. Generate both PDFs (same capturePDF() used by the old Download PDF buttons)
+    const qDrivePdf = await capturePDF('questions');
+    const aDrivePdf = await capturePDF('answers');
+
+    // 1b. Resolve/create the destination Drive folder path
+    const dest = await resolveDestinationFolder(university, faculty, department, semester);
+
+    const fnameParts = [courseCode, year.replace(/[^0-9]/g,''), dest.semesterName.toUpperCase(), dest.facultyName.toUpperCase(), dest.departmentName.toUpperCase(), docTitle, dest.universityName.toUpperCase()];
+    const fnameBase = fnameParts.filter(Boolean).join('_').replace(/[^a-zA-Z0-9\s_]/g,'').replace(/\s+/g,'_');
+
+    // 1c. Upload both PDFs into that folder
+    const qDriveFile = await uploadFileToFolder(qDrivePdf.blob, `${fnameBase}_Questions.pdf`, dest.semesterFolderId);
+    const aDriveFile = await uploadFileToFolder(aDrivePdf.blob, `${fnameBase}_QA.pdf`, dest.semesterFolderId);
+
+    // 1d. Make both files public so WPDM/the site can link to them
+    await Promise.all([makePublic(qDriveFile.id), makePublic(aDriveFile.id)]);
+    const qDriveUrl = driveDownloadUrl(qDriveFile.id);
+    const aDriveUrl = driveDownloadUrl(aDriveFile.id);
+
+    // 1e. Create both WPDM packages (no-answers = free, with-answers = priced)
+    const WPDM_BASE_PRICE = 200;
+    const [qWpdmPkg, aWpdmPkg] = await Promise.all([
+      createWpdmPackage({ title: `${courseCode} (${semester}, ${year}) | ${pkgAcronym}`.trim() + ' — Ques Only', linkLabel: 'Download Past Questions (No Answers)', fileUrl: qDriveUrl, fileName: qDriveFile.name, fileSize: qDrivePdf.blob.size, basePrice: 0 }),
+      createWpdmPackage({ title: `${courseCode} (${semester}, ${year}) | ${pkgAcronym}`.trim() + ' — Q+A', linkLabel: 'Download Past Questions with Answers', fileUrl: aDriveUrl, fileName: aDriveFile.name, fileSize: aDrivePdf.blob.size, basePrice: WPDM_BASE_PRICE })
+    ]);
+
+    // ════════════════════════════════════════════════════════
+    // PHASE 2 — Quizzes & listings (was: Post Questions + Create Quizzes + Publish PQ Listing)
+    // ════════════════════════════════════════════════════════
+    setBusy('🧩 Creating quizzes & listings…');
+
+    // 2a. Post questions first so we get back real DB question_ids
+    const questionsPostResult = await wpProxyPost(AYS_QUESTIONS_ENDPOINT,{ questions: questionsSnapshot });
+    const questionIds = questionsPostResult.question_ids || [];
     if(!questionIds.length){
       throw new Error('No question_ids returned from questions endpoint');
     }
 
-    // Step 2: create both quizzes (Q&A Review Mode + Quiz Mode) from those IDs
-    setBusy('🧩 Creating quizzes…');
+    // 2b. Create both quizzes (Q&A Review Mode + Quiz Mode) from those IDs
     const quizResult = await wpProxyPost(AYS_QUIZ_ENDPOINT,{
       title,
       category,
       question_ids: questionIds
     });
-
-    btn.innerHTML='<span class="jump-dot" style="background:#34D399"></span> Quizzes Created!';
-    btn.disabled=false;
-
     const qaUrl = quizResult.qa_review?.preview_url || '';
     const quizUrl = quizResult.quiz_mode?.preview_url || '';
-    toast(`Quizzes created!\nQ&A Review Mode: ${qaUrl}\nQuiz Mode: ${quizUrl}`,'success');
+
+    // 2c. Publish the Uni Pq Quiz listing post (independent — its failure
+    // shouldn't block the Uni PQ Download post below from being attempted)
+    let uniPqQuizResult = null, uniPqQuizError = null;
+    try{
+      uniPqQuizResult = await publishUniPqQuiz(qaUrl, quizUrl, courseSnapshot);
+    }catch(err){
+      console.error('[uni-pq-quiz] listing publish failed:',err);
+      uniPqQuizError = err;
+    }
+
+    // 2d. Publish the Uni PQ Download post, using the real WPDM package
+    // page URLs from Phase 1 (not placeholder/empty values)
+    let uniPqDownloadResult = null, uniPqDownloadError = null;
+    try{
+      uniPqDownloadResult = await publishPqListing(qWpdmPkg.pageUrl, aWpdmPkg.pageUrl, WPDM_BASE_PRICE, courseSnapshot);
+    }catch(err){
+      console.error('[uni-pq-download] listing publish failed:',err);
+      uniPqDownloadError = err;
+    }
+
+    // ── Done ──
+    btn.innerHTML='<span class="jump-dot" style="background:#34D399"></span> Done!';
+    btn.disabled=false;
+    // Restore the original label after a short delay so the person sees
+    // "Done!" briefly, but the button is ready/labeled correctly for a
+    // second run (e.g. a different course) without looking stuck.
+    setTimeout(()=>{ if(btn.dataset.origLabel) btn.innerHTML=btn.dataset.origLabel; }, 2500);
+
+    renderFinalLinksBox({ uniPqQuizResult, uniPqQuizError, uniPqDownloadResult, uniPqDownloadError });
+
+    if(uniPqQuizResult && uniPqDownloadResult){
+      toast('All done! Both listings published.','success');
+    }else{
+      toast('Done, but one listing failed — see the box below for details.','error');
+    }
   }catch(err){
     console.error('[ays-quiz] failed:',err);
     clearBusy();
-    toast(`Quiz creation failed: ${err.message}`,'error');
+    toast(`Process failed: ${err.message}`,'error');
   }
 }
 </script>
