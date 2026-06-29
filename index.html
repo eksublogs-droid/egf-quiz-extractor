@@ -289,6 +289,9 @@
     letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;
   }
   .explanation-box p{font-size:14.5px;color:var(--white-dim);line-height:1.6}
+  .exp-steps{display:flex;flex-direction:column;gap:5px}
+  .exp-step{font-size:14.5px;color:var(--white-dim);line-height:1.6;padding:4px 0;border-bottom:1px solid rgba(45,126,255,.08)}
+  .exp-step:last-child{border-bottom:none;padding-bottom:0}
 
   /* ── QUESTION EDIT MODE (Section 2 / renderSection2) ──── */
   .q-edit-textarea{
@@ -2010,8 +2013,8 @@ UNICODE & FORMATTING FIDELITY — MANDATORY. Preserve every visible character ex
 
       const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
 Return ONLY a valid JSON array, no markdown:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"max 12 words, key reason only"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Keep explanation under 12 words — no exceptions.
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text"}]
+qIndex is zero-based. correctLabel must be A/B/C/D. Do NOT include explanation — only qIndex, correctLabel, and correctText.
 CRITICAL: correctText must be copied VERBATIM from the option text exactly as given — preserve every Unicode character including superscripts (x², H₂O), subscripts, Greek letters (α β γ), math symbols (√ ∑ ∫ ≤), chemistry notation (Ca²⁺ SO₄²⁻ ⇌), currency (₦ €), and all other special characters without any change, normalization, or ASCII substitution. Return ONLY the JSON array.
 
 QUESTIONS:
@@ -2027,10 +2030,40 @@ ${questionsForVerification}`;
 
       const keys=getKeys();
       const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
-      const [pass1Text,pass2Text]=await Promise.all([
+
+      // Dedicated explanation prompt — runs on key 3, parallel with Pass 1 & 2
+      const explainPrompt=`You are an academic tutor writing clear, stepped explanations for MCQ answers.
+Return ONLY a valid JSON array, no markdown, no backticks:
+[{"qIndex":0,"explanation":"your explanation here"}]
+qIndex is zero-based. One object per question.
+
+EXPLANATION RULES:
+- Write 20–80 words per explanation — moderate length, not too short, not too long
+- For calculation questions: show each step on a new line using \\n between steps. Example: "Step 1: Force = mass × g = 8 × 9.8 = 78.4 N\\nStep 2: Area = π × (0.0013/2)² = 1.327 × 10⁻⁶ m²\\nStep 3: Stress = F/A = 78.4 / 1.327×10⁻⁶ = 5.91 × 10⁷ Pa"
+- For conceptual questions: write a clear 1–3 sentence explanation, no forced steps
+- Preserve all Unicode symbols exactly: superscripts (x², 10⁻³), subscripts (H₂O), Greek (α β γ θ λ), math (√ ∑ ∫ ≤ ≥ ∞ ±), chemistry (→ ⇌ Ca²⁺), currency (₦ €)
+- Use \\n only to separate meaningful steps — never pad with unnecessary line breaks
+- Be academically accurate
+Return ONLY the JSON array.
+
+QUESTIONS:
+${questionsForVerification}`;
+
+      const [pass1Result,pass2Result,explainResult]=await Promise.allSettled([
         geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash'),
-        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash')
+        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash'),
+        geminiCall([{text:explainPrompt}],verifySysInstruction,0,(currentKeyIndex+2)%keys.length,0,'gemini-2.5-flash')
       ]);
+      // Pass 1 and Pass 2 are critical — if either rejected here, treat as empty text
+      // so the existing retry blocks below kick in exactly as before.
+      const pass1Text=pass1Result.status==='fulfilled'?pass1Result.value:'';
+      const pass2Text=pass2Result.status==='fulfilled'?pass2Result.value:'';
+      // Explanation is non-critical — if it failed (rate limit, MAX_TOKENS, network),
+      // explainText stays empty and the fallback below ('Answer not verified.') kicks in.
+      const explainText=explainResult.status==='fulfilled'?explainResult.value:'';
+      if(explainResult.status==='rejected'){
+        console.warn('[explain] dedicated explanation call failed, using fallback explanations',explainResult.reason);
+      }
 
       setProgress(70,'Resolving conflicts...');
       setStep(3,'active');
@@ -2082,8 +2115,8 @@ ${questionsForVerification}`;
 
         const bulkTiebreakPrompt=`Academic referee. Resolve ALL conflicting MCQ answers below in one go.
 Return ONLY a valid JSON array, no markdown, no backticks:
-[{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"key reason in max 12 words"}]
-One object per question. qIndex must match exactly.
+[{"qIndex":0,"correctLabel":"A","correctText":"exact option text"}]
+One object per question. qIndex must match exactly. Do NOT include explanation.
 CRITICAL: correctText must be copied VERBATIM from the option text — preserve every Unicode character including superscripts (x², H₂O), subscripts, Greek letters (α β γ), math symbols (√ ∑ ∫ ≤), chemistry notation (Ca²⁺ SO₄²⁻ ⇌), currency (₦ €), and all other special characters exactly without any ASCII substitution or normalization. Return ONLY the JSON array.
 
 CONFLICTING QUESTIONS:
@@ -2103,6 +2136,23 @@ ${conflictQuestionsText}`;
       setProgress(88,'Generating outputs...');
       setStep(4,'active');
 
+      // Parse explanation results and merge into finalAnswers
+      // Falls back to a short default per question if the call failed or returned bad data
+      try{
+        const explainParsed=extractJSON(explainText);
+        if(Array.isArray(explainParsed)){
+          explainParsed.forEach(e=>{
+            if(e && typeof e.qIndex==='number' && e.explanation){
+              const existing=finalAnswers.get(e.qIndex)||{};
+              finalAnswers.set(e.qIndex,{...existing, explanation:e.explanation});
+            }
+          });
+        }
+      }catch(e){
+        // Explanation call failed — verifiedData fallback below will use 'Answer not verified.'
+        console.warn('[explain] parse failed, using fallback explanations',e);
+      }
+
       // Read course fields (user may have edited them after extraction)
       const finalUniversity=document.getElementById('courseUniversity').value||extractedData.courseUniversity||'';
       const finalAcronym=document.getElementById('courseAcronym').value||extractedData.courseAcronym||deriveAcronym(finalUniversity);
@@ -2118,6 +2168,7 @@ ${conflictQuestionsText}`;
 
       verifiedData=extractedData.questions.map((q,i)=>{
         const ans=finalAnswers.get(i)||{correctLabel:'A',correctText:q.options[0]?.text||'',explanation:'Answer not verified.'};
+        if(!ans.explanation) ans.explanation='Answer not verified.';
         return{
           question:q.question,
           options:q.options,
@@ -2258,7 +2309,7 @@ function renderAnswerItem(i,q,ul){
       <div class="correct-tag">✓ Correct: ${escHtml(q.correctLabel)}. ${escHtml(q.correctText)}</div>
       <div class="explanation-box">
         <div class="exp-label">Explanation</div>
-        <p>${escHtml(q.explanation)}</p>
+        <div class="exp-steps">${escHtml(q.explanation||'').split('\n').map(line=>line.trim()).filter(Boolean).map(line=>`<div class="exp-step">${line}</div>`).join('')}</div>
       </div>
       <button class="q-item-editbtn" onclick="editQuestionInline(${i},'answers')">✎ Edit</button>
     </div>`;
@@ -2913,7 +2964,9 @@ async function downloadPDF(mode){
     // Explanation & tag
     let expLines=[],expH=0,tagLines=[],tagH=0;
     if(isAnswers){
-      expLines=st(q.explanation,contentW-20,9,'normal');
+      // Split explanation on \n so each step gets its own line in the PDF
+      const expSteps=(q.explanation||'').split('\n').map(s=>s.trim()).filter(Boolean);
+      expLines=expSteps.flatMap(step=>st(step,contentW-20,9,'normal'));
       expH=expLines.length*5.2+16;
       tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-20,9,'bold');
       tagH=tagLines.length*5+6;
