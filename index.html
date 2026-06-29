@@ -1470,12 +1470,28 @@ function closeSettings(){ document.getElementById('settingsModal').classList.rem
 const MAX_RATE_LIMIT_ROUNDS=3; // how many full wait-and-retry cycles to attempt
 const RATE_LIMIT_FALLBACK_WAIT_SECONDS=20; // used if Gemini's error message has no "retry in Ns" hint
 
-function waitWithCountdown(totalSeconds,round){
+// When multiple geminiCall() invocations run concurrently (e.g. Pass 1 + Pass 2 in
+// parallel), they used to all write directly to the single #progressLabel element,
+// clobbering each other's text every few hundred ms — which made it look like the
+// process was stuck/looping when really 2+ separate streams were just racing for
+// the same line of text. Each concurrent call now reports into this object under
+// its own tag, and the label renders a combined line so every call stays visible.
+const callProgress={};
+function renderCallProgress(){
+  const label=document.getElementById('progressLabel');
+  if(!label) return;
+  const parts=Object.entries(callProgress).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`);
+  if(parts.length) label.textContent=parts.join('  ·  ');
+}
+function clearCallProgress(){ for(const k of Object.keys(callProgress)) delete callProgress[k]; }
+
+function waitWithCountdown(totalSeconds,round,callTag=null){
   return new Promise(resolve=>{
     let remaining=totalSeconds;
-    const label=document.getElementById('progressLabel');
     const tick=()=>{
-      if(label) label.textContent=`Rate limited — retrying in ${remaining}s (attempt ${round}/${MAX_RATE_LIMIT_ROUNDS})...`;
+      const msg=`Rate limited — retrying in ${remaining}s (attempt ${round}/${MAX_RATE_LIMIT_ROUNDS})...`;
+      if(callTag){ callProgress[callTag]=msg; renderCallProgress(); }
+      else{ const label=document.getElementById('progressLabel'); if(label) label.textContent=msg; }
       if(remaining<=0){
         clearInterval(intervalId);
         resolve();
@@ -1488,7 +1504,7 @@ function waitWithCountdown(totalSeconds,round){
   });
 }
 
-async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0, model=GEMINI_MODEL, maxTokens=65536, timeoutMs=45000){
+async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null, thinkingBudget=0, model=GEMINI_MODEL, maxTokens=65536, timeoutMs=45000, callTag=null){
   const keys=getKeys();
   if(keys.length===0) throw new Error('No API keys saved. Click "API Keys" in the top right to add your Gemini keys.');
   if(attempt>=keys.length*2*(MAX_RATE_LIMIT_ROUNDS+1)) throw new Error('All API keys exhausted or failed. Please check your keys and try again.');
@@ -1539,8 +1555,8 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
         const waitSeconds=waitMatch?Math.ceil(parseFloat(waitMatch[1])):RATE_LIMIT_FALLBACK_WAIT_SECONDS;
         const round=Math.floor(attempt/(keys.length*2))+1;
         if(round<=MAX_RATE_LIMIT_ROUNDS){
-          await waitWithCountdown(waitSeconds,round);
-          return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model,maxTokens,timeoutMs);
+          await waitWithCountdown(waitSeconds,round,callTag);
+          return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model,maxTokens,timeoutMs,callTag);
         }
       }
       const err=await res.json().catch(()=>({}));
@@ -1548,7 +1564,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
     }
     currentKeyIndex=(currentKeyIndex+1)%keys.length;
     renderActiveKeyBanner();
-    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model);
+    return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model,maxTokens,timeoutMs,callTag);
   }
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
@@ -1556,7 +1572,7 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
     if(res.status===400&&msg.includes('API_KEY_INVALID')){
       currentKeyIndex=(currentKeyIndex+1)%keys.length;
       renderActiveKeyBanner();
-      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model);
+      return geminiCall(parts,systemInstruction,attempt+1,startKeyIdx,thinkingBudget,model,maxTokens,timeoutMs,callTag);
     }
     throw new Error(`Gemini error: ${msg}`);
   }
@@ -1590,9 +1606,16 @@ async function geminiCall(parts, systemInstruction, attempt=0, startKeyIdx=null,
         if(chunk?.candidates?.[0]?.finishReason) finishReason=chunk.candidates[0].finishReason;
         if(piece){
           fullText+=piece;
-          // Update progress label with live character count
-          const label=document.getElementById('progressLabel');
-          if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
+          // Update progress label with live character count — namespaced per call
+          // so concurrent calls (e.g. Pass 1 + Pass 2 running together) don't
+          // overwrite each other's status text.
+          if(callTag){
+            callProgress[callTag]=`Receiving... (${fullText.length} chars)`;
+            renderCallProgress();
+          } else {
+            const label=document.getElementById('progressLabel');
+            if(label) label.textContent=`Receiving... (${fullText.length} chars)`;
+          }
           // Yield to browser so UI actually paints on Android
           await new Promise(r=>setTimeout(r,0));
           if(fullText.length>MAX_CHARS){
@@ -2031,39 +2054,26 @@ ${questionsForVerification}`;
       const keys=getKeys();
       const verifySysInstruction='You are a JSON-only answer verifier. Respond with ONLY a valid JSON array. No markdown, no backticks, no explanation, no thinking text. Start your response with [ and end with ].';
 
-      // Dedicated explanation prompt — runs on key 3, parallel with Pass 1 & 2
-      const explainPrompt=`You are an academic tutor writing clear, stepped explanations for MCQ answers.
-Return ONLY a valid JSON array, no markdown, no backticks:
-[{"qIndex":0,"explanation":"your explanation here"}]
-qIndex is zero-based. One object per question.
+      // NOTE: explanation generation no longer runs here as a 3rd concurrent call.
+      // Running Pass 1 + Pass 2 + a full-batch explanation call all at once tripled
+      // concurrent API load on every verification, which made larger/denser papers
+      // (more questions = more output tokens needed, especially for explanations)
+      // hit 429 rate limits far more easily. It also meant 3 separate streams were
+      // all overwriting the same progress label, making a slow-but-progressing run
+      // look like an infinite stuck loop. Explanations are now generated AFTER
+      // Pass 1/2 finish, in small sequential batches with a hard token ceiling —
+      // see the EXPLANATION GENERATION block below, after conflicts are resolved.
 
-EXPLANATION RULES:
-- Write 20–80 words per explanation — moderate length, not too short, not too long
-- For calculation questions: show each step on a new line using \\n between steps. Example: "Step 1: Force = mass × g = 8 × 9.8 = 78.4 N\\nStep 2: Area = π × (0.0013/2)² = 1.327 × 10⁻⁶ m²\\nStep 3: Stress = F/A = 78.4 / 1.327×10⁻⁶ = 5.91 × 10⁷ Pa"
-- For conceptual questions: write a clear 1–3 sentence explanation, no forced steps
-- Preserve all Unicode symbols exactly: superscripts (x², 10⁻³), subscripts (H₂O), Greek (α β γ θ λ), math (√ ∑ ∫ ≤ ≥ ∞ ±), chemistry (→ ⇌ Ca²⁺), currency (₦ €)
-- Use \\n only to separate meaningful steps — never pad with unnecessary line breaks
-- Be academically accurate
-Return ONLY the JSON array.
-
-QUESTIONS:
-${questionsForVerification}`;
-
-      const [pass1Result,pass2Result,explainResult]=await Promise.allSettled([
-        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash'),
-        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash'),
-        geminiCall([{text:explainPrompt}],verifySysInstruction,0,(currentKeyIndex+2)%keys.length,0,'gemini-2.5-flash')
+      clearCallProgress();
+      const [pass1Result,pass2Result]=await Promise.allSettled([
+        geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash',65536,45000,'Pass 1'),
+        geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash',65536,45000,'Pass 2')
       ]);
+      clearCallProgress();
       // Pass 1 and Pass 2 are critical — if either rejected here, treat as empty text
       // so the existing retry blocks below kick in exactly as before.
       const pass1Text=pass1Result.status==='fulfilled'?pass1Result.value:'';
       const pass2Text=pass2Result.status==='fulfilled'?pass2Result.value:'';
-      // Explanation is non-critical — if it failed (rate limit, MAX_TOKENS, network),
-      // explainText stays empty and the fallback below ('Answer not verified.') kicks in.
-      const explainText=explainResult.status==='fulfilled'?explainResult.value:'';
-      if(explainResult.status==='rejected'){
-        console.warn('[explain] dedicated explanation call failed, using fallback explanations',explainResult.reason);
-      }
 
       setProgress(70,'Resolving conflicts...');
       setStep(3,'active');
@@ -2073,7 +2083,7 @@ ${questionsForVerification}`;
         if(!Array.isArray(pass1)) throw new Error('Not an array');
       }catch(e){
         try{
-          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash');
+          const retryText=await geminiCall([{text:verifyPrompt1}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash',65536,45000,'Pass 1');
           pass1=extractJSON(retryText);
           if(!Array.isArray(pass1)) throw new Error('Not an array');
         }catch(e2){
@@ -2087,7 +2097,7 @@ ${questionsForVerification}`;
         if(!Array.isArray(pass2)) throw new Error('Not an array');
       }catch(e){
         try{
-          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash');
+          const retryText=await geminiCall([{text:verifyPrompt2}],verifySysInstruction,0,(currentKeyIndex+1)%keys.length,0,'gemini-2.5-flash',65536,45000,'Pass 2');
           pass2=extractJSON(retryText);
           if(!Array.isArray(pass2)) throw new Error('Not an array');
         }catch(e2){
@@ -2133,25 +2143,75 @@ ${conflictQuestionsText}`;
         }
       }
 
+      // ── EXPLANATION GENERATION (sequential, batched, bounded output) ──
+      // Runs AFTER Pass 1/2 + tiebreak are fully done — never concurrently with
+      // them — so it can never add to the rate-limit pressure that was causing
+      // 429s on denser papers. Questions are explained in small batches (not one
+      // giant call for all questions) and each batch has a hard maxTokens ceiling
+      // sized to the batch, so a degenerate/rambling response gets cut off quickly
+      // instead of streaming tens of thousands of characters before the safety net
+      // (MAX_CHARS) kicks in. A failed batch only loses explanations for the
+      // questions in that batch — every other batch's explanations still land.
+      const EXPLAIN_BATCH_SIZE=8;
+      const totalQ=extractedData.questions.length;
+      const batchCount=Math.ceil(totalQ/EXPLAIN_BATCH_SIZE);
+      for(let b=0;b<batchCount;b++){
+        const startIdx=b*EXPLAIN_BATCH_SIZE;
+        const batchIndices=[];
+        for(let i=startIdx;i<Math.min(startIdx+EXPLAIN_BATCH_SIZE,totalQ);i++) batchIndices.push(i);
+
+        setProgress(82+Math.round((b/batchCount)*6),`Generating explanations (batch ${b+1}/${batchCount})...`);
+
+        const batchQuestionsText=batchIndices.map(i=>{
+          const q=extractedData.questions[i];
+          const opts=q.options.map(o=>`${o.label}. ${o.text}`).join('\n');
+          return `qIndex ${i}:\n${q.question}\n${opts}`;
+        }).join('\n\n');
+
+        const explainPrompt=`You are an academic tutor writing clear, stepped explanations for MCQ answers.
+Return ONLY a valid JSON array, no markdown, no backticks:
+[{"qIndex":0,"explanation":"your explanation here"}]
+qIndex must match exactly. One object per question below — ${batchIndices.length} question(s) total.
+
+EXPLANATION RULES:
+- Write 20–80 words per explanation — moderate length, not too short, not too long
+- For calculation questions: show each step on a new line using \\n between steps. Example: "Step 1: Force = mass × g = 8 × 9.8 = 78.4 N\\nStep 2: Area = π × (0.0013/2)² = 1.327 × 10⁻⁶ m²\\nStep 3: Stress = F/A = 78.4 / 1.327×10⁻⁶ = 5.91 × 10⁷ Pa"
+- For conceptual questions: write a clear 1–3 sentence explanation, no forced steps
+- Preserve all Unicode symbols exactly: superscripts (x², 10⁻³), subscripts (H₂O), Greek (α β γ θ λ), math (√ ∑ ∫ ≤ ≥ ∞ ±), chemistry (→ ⇌ Ca²⁺), currency (₦ €)
+- Use \\n only to separate meaningful steps — never pad with unnecessary line breaks
+- Be academically accurate
+Return ONLY the JSON array.
+
+QUESTIONS:
+${batchQuestionsText}`;
+
+        // Hard ceiling sized to the batch: ~300 tokens/question (generous for an
+        // 80-word explanation plus JSON overhead) keeps a degenerate response from
+        // ballooning the way the old single-call-for-everything version could.
+        const batchMaxTokens=Math.min(8000,Math.max(1500,batchIndices.length*300));
+
+        try{
+          const explainText=await geminiCall([{text:explainPrompt}],verifySysInstruction,0,currentKeyIndex%keys.length,0,'gemini-2.5-flash',batchMaxTokens,45000,'Explain');
+          const explainParsed=extractJSON(explainText);
+          if(Array.isArray(explainParsed)){
+            explainParsed.forEach(e=>{
+              if(e && typeof e.qIndex==='number' && e.explanation){
+                const existing=finalAnswers.get(e.qIndex)||{};
+                finalAnswers.set(e.qIndex,{...existing, explanation:e.explanation});
+              }
+            });
+          }
+        }catch(e){
+          // This batch failed (rate limit, MAX_TOKENS, parse error, etc.) — only the
+          // questions in THIS batch fall back to 'Answer not verified.' below; every
+          // other batch is unaffected.
+          console.warn(`[explain] batch ${b+1}/${batchCount} failed, using fallback explanations for its questions`,e);
+        }
+        clearCallProgress();
+      }
+
       setProgress(88,'Generating outputs...');
       setStep(4,'active');
-
-      // Parse explanation results and merge into finalAnswers
-      // Falls back to a short default per question if the call failed or returned bad data
-      try{
-        const explainParsed=extractJSON(explainText);
-        if(Array.isArray(explainParsed)){
-          explainParsed.forEach(e=>{
-            if(e && typeof e.qIndex==='number' && e.explanation){
-              const existing=finalAnswers.get(e.qIndex)||{};
-              finalAnswers.set(e.qIndex,{...existing, explanation:e.explanation});
-            }
-          });
-        }
-      }catch(e){
-        // Explanation call failed — verifiedData fallback below will use 'Answer not verified.'
-        console.warn('[explain] parse failed, using fallback explanations',e);
-      }
 
       // Read course fields (user may have edited them after extraction)
       const finalUniversity=document.getElementById('courseUniversity').value||extractedData.courseUniversity||'';
