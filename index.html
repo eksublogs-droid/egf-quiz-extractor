@@ -1779,8 +1779,8 @@ function fileToBase64(file){
     const url=URL.createObjectURL(file);
     img.onload=()=>{
       URL.revokeObjectURL(url);
-      // Resize to max 1024px on longest side
-      const MAX=1024;
+      // Resize to max 2048px on longest side — larger = sharper subscripts/superscripts/symbols
+      const MAX=2048;
       let w=img.width; let h=img.height;
       if(w>MAX||h>MAX){
         if(w>h){ h=Math.round(h*MAX/w); w=MAX; }
@@ -1789,8 +1789,8 @@ function fileToBase64(file){
       const canvas=document.createElement('canvas');
       canvas.width=w; canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
-      // JPEG at 85% quality — readable text, small size
-      const dataUrl=canvas.toDataURL('image/jpeg',0.85);
+      // PNG (lossless) — preserves fine detail: subscripts, superscripts, symbols, fractions
+      const dataUrl=canvas.toDataURL('image/png');
       res(dataUrl.split(',')[1]);
     };
     img.onerror=()=>rej(new Error('Failed to read '+file.name));
@@ -1849,7 +1849,7 @@ async function startProcessing(){
       setStep(1,'active');
 
       const imageParts=base64Images.map((b64)=>({
-        inline_data:{mime_type:'image/jpeg',data:b64}
+        inline_data:{mime_type:'image/png',data:b64}
       }));
 
       const extractionPrompt=`Extract ALL exam questions and course info from ALL provided images combined.
@@ -1870,6 +1870,84 @@ Rules:
 - courseTitle defaults to "Unknown Course" if missing
 - courseYear defaults to "Unknown Year" if missing
 - Questions with fewer than 4 options: include only what exists
+
+UNICODE & FORMATTING FIDELITY — MANDATORY. Preserve every visible character exactly as it appears. Never convert Unicode to plain ASCII. Never normalize, approximate, or drop any character. Rules by category:
+
+1. SUPERSCRIPTS: x² NOT x2 | 10⁻³ NOT 10-3 | cm³ NOT cm3 | Fe³⁺ NOT Fe3+
+
+2. SUBSCRIPTS: H₂O NOT H2O | CO₂ NOT CO2 | Na₂SO₄ NOT Na2SO4 | H₂SO₄ NOT H2SO4
+
+3. FRACTIONS: use ½ ¾ ⅓ ⅔ where clearly visible; otherwise write as n/d with a slash
+
+4. MATHEMATICAL EXPRESSIONS — use these exact Unicode symbols, never ASCII replacements:
+   √ ∛ | ∑ ∏ | ∫ ∬ ∮ | ∂ | ∞ | ± ∓ | × ÷ | ≠ ≈ ≅ | ≤ ≥ | ∝ | ∈ ∉ | ⊂ ⊆ ⊃ | ∩ ∪ | ∧ ∨ | ∀ ∃ | ∴ ∵ | → ← ↔ ⇒ ⇔ | ⊥ ∥ | ∘ | °
+
+5. PHYSICS SYMBOLS:
+   - Greek: α β γ δ ε ζ η θ λ μ ν ξ π ρ σ τ φ χ ψ ω Δ Ω (never replace with Latin letters)
+   - Constants: ħ ℏ ε₀ μ₀ — preserve exactly
+   - Vector notation: if a variable has an arrow over it (e.g. →v, →F), represent as v⃗ or →v
+   - Dot notation: if a variable has a dot over it (ẋ, ẍ), use ẋ ẍ or write ẋ
+   - Arrows over variables: preserve as →x or use Unicode combining characters
+
+6. CHEMISTRY NOTATION:
+   - Chemical formulas: H₂SO₄ Fe₂O₃ NH₄⁺ — preserve all subscripts and superscripts
+   - Ionic charges: Ca²⁺ SO₄²⁻ Cl⁻ Na⁺ — use proper superscript Unicode
+   - Reaction arrows: → for one-way, ⇌ for equilibrium — never use -> or <=>
+   - State symbols: (s) (l) (g) (aq) — preserve exactly including parentheses
+   - Hydrates: CuSO₄·5H₂O — use · (middle dot U+00B7), not a period or asterisk
+   - Isotopes: ¹⁴C ²³⁵U — use superscript numbers
+   - Electron configurations: e.g. 1s² 2s² 2p⁶ — preserve superscripts
+   - Structural notation where represented in text: preserve as-is
+
+7. CURRENCY SYMBOLS — use exact Unicode, never write the word:
+   ₦ $ € £ ¥ ₹ ₩ ₽ ₺ ฿ ₫ ₪
+
+8. TYPOGRAPHIC SYMBOLS — preserve exactly:
+   © ® ™ § ¶ † ‡ • … — – ′ ″ °
+
+9. QUOTATION MARKS — preserve the exact characters, never normalize to straight quotes:
+   \u201c \u201d (curly double open/close) | \u2018 \u2019 (curly single open/close) | preserve as-is from source
+
+10. UNICODE CHARACTERS — always use Unicode, never convert to ASCII:
+    - Roman numerals: I II III IV V VI VII VIII IX X XI XII etc. — preserve exactly as shown
+    - Greek letters: preserve exactly (see item 5)
+    - Special alphabets: preserve any non-Latin script characters (Arabic, Hebrew, Cyrillic, etc.) exactly
+    - Scientific notation: e.g. 6.02\u00d710\u00b2\u00b3 — use \u00d7 and superscript digits, never write "x" or "e" as the multiplier
+    - Any uncommon Unicode symbol: preserve exactly
+
+11. TABLES, COLUMNS, INDENTATION, LINE BREAKS:
+    - If a question contains tabular data, represent columns separated by spaces or | characters
+    - Preserve indentation using spaces
+    - Preserve meaningful line breaks using \\n within the JSON string value
+
+12. TEXT FORMATTING — if visually present in image:
+    - Bold text: wrap in **text**
+    - Italic text: wrap in _text_
+    - Underlined text: wrap in __text__
+    - Strikethrough: wrap in ~~text~~
+    - Small caps: preserve the words as uppercase if clearly small-caps
+    - Monospace/code text: wrap in \`text\`
+    - Different font sizes: note only if critical to meaning
+
+13. SPECIAL CHARACTERS:
+    - Checkboxes: ☑ ☐ ☒ — use exact Unicode
+    - Bullets: • ○ ◦ ▪ — use exact Unicode
+    - Stars: ★ ☆ — use exact Unicode
+    - Box-drawing characters: preserve if present
+    - Mathematical layout: preserve spatial relationships where possible
+
+14. EMOJI & PICTOGRAPHS:
+    - Preserve any emoji, Unicode pictographs, or dingbat symbols exactly as they appear
+
+15. UNCERTAIN CHARACTERS:
+    - If a character cannot be recognized with high confidence, write [?] at that exact position
+    - Never guess, skip, or replace an uncertain character with something else
+    - Only mark the uncertain character itself, not surrounding text
+
+16. OUTPUT FORMAT:
+    - Where the output format (JSON string values) supports it, use Markdown formatting to represent bold (**), italic (_), code (\`), and line breaks (\\n) rather than flattening everything into plain text
+    - This preserves structure and formatting faithfully instead of losing it
+
 - YOUR ENTIRE RESPONSE MUST BE ONLY THE JSON OBJECT`;
 
       const extractText=await geminiCall([...imageParts,{text:extractionPrompt}],'You are a JSON-only exam parser. You must respond with only a valid JSON object. No markdown. No explanation. No backticks. Only JSON.');
@@ -1933,7 +2011,8 @@ Rules:
       const verifyPrompt1=`You are an academic examiner. Answer each MCQ below with 100% accuracy.
 Return ONLY a valid JSON array, no markdown:
 [{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"max 12 words, key reason only"}]
-qIndex is zero-based. correctLabel must be A/B/C/D. Keep explanation under 12 words — no exceptions. Return ONLY the JSON array.
+qIndex is zero-based. correctLabel must be A/B/C/D. Keep explanation under 12 words — no exceptions.
+CRITICAL: correctText must be copied VERBATIM from the option text exactly as given — preserve every Unicode character including superscripts (x², H₂O), subscripts, Greek letters (α β γ), math symbols (√ ∑ ∫ ≤), chemistry notation (Ca²⁺ SO₄²⁻ ⇌), currency (₦ €), and all other special characters without any change, normalization, or ASCII substitution. Return ONLY the JSON array.
 
 QUESTIONS:
 ${questionsForVerification}`;
@@ -2004,7 +2083,8 @@ ${questionsForVerification}`;
         const bulkTiebreakPrompt=`Academic referee. Resolve ALL conflicting MCQ answers below in one go.
 Return ONLY a valid JSON array, no markdown, no backticks:
 [{"qIndex":0,"correctLabel":"A","correctText":"exact option text","explanation":"key reason in max 12 words"}]
-One object per question. qIndex must match exactly. Return ONLY the JSON array.
+One object per question. qIndex must match exactly.
+CRITICAL: correctText must be copied VERBATIM from the option text — preserve every Unicode character including superscripts (x², H₂O), subscripts, Greek letters (α β γ), math symbols (√ ∑ ∫ ≤), chemistry notation (Ca²⁺ SO₄²⁻ ⇌), currency (₦ €), and all other special characters exactly without any ASCII substitution or normalization. Return ONLY the JSON array.
 
 CONFLICTING QUESTIONS:
 ${conflictQuestionsText}`;
@@ -2599,11 +2679,57 @@ function buildSlug(title,year){
 // ════════════════════════════════════════════════════════
 //  PDF GENERATION
 // ════════════════════════════════════════════════════════
+
+// Cache loaded font data so we only fetch once per session
+let _pdfFontCache = null;
+
+async function _loadPdfFonts(doc) {
+  // If already loaded into this doc instance, skip
+  if (_pdfFontCache) {
+    doc.addFileToVFS('NotoSans-Regular.ttf', _pdfFontCache.regular);
+    doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
+    doc.addFileToVFS('NotoSans-Bold.ttf', _pdfFontCache.bold);
+    doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
+    return;
+  }
+  // Fetch NotoSans TTF files — these have full Unicode coverage including
+  // subscripts, superscripts, Greek, math, chemistry, currency symbols
+  const toBase64 = async (url) => {
+    const res = await fetch(url);
+    const buf = await res.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  };
+  const [regular, bold] = await Promise.all([
+    toBase64('https://fonts.gstatic.com/s/notosans/v36/o-0IIpQlx3QUlC5A4PNjXhFVatyB1Wk.ttf'),
+    toBase64('https://fonts.gstatic.com/s/notosans/v36/o-0NIpQlx3QUlC5A4PNjXhFVZNyBx2pqPIif.ttf'),
+  ]);
+  _pdfFontCache = { regular, bold };
+  doc.addFileToVFS('NotoSans-Regular.ttf', regular);
+  doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
+  doc.addFileToVFS('NotoSans-Bold.ttf', bold);
+  doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
+}
+
 async function downloadPDF(mode){
   if(!verifiedData){ toast('No data yet — run extraction first','error'); return; }
 
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+
+  // Load Unicode font — replaces helvetica (Latin-1 only) so all
+  // subscripts, superscripts, Greek letters, math/chemistry/physics
+  // symbols and ₦ currency render correctly in the PDF
+  try {
+    await _loadPdfFonts(doc);
+  } catch(e) {
+    // Fallback to helvetica if font fetch fails (offline / CORS)
+    console.warn('NotoSans font load failed, falling back to helvetica:', e);
+  }
+  // After loading, check which font is available
+  const _font = doc.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
 
   const university=extractedData?.courseUniversity||'';
   const acronym=extractedData?.courseAcronym||deriveAcronym(university);
@@ -2634,7 +2760,7 @@ async function downloadPDF(mode){
   let y=0; let pageNum=1;
 
   function st(text,maxW,fs,fw){
-    doc.setFont('helvetica',fw||'normal');
+    doc.setFont(_font,fw||'normal');
     doc.setFontSize(fs);
     return doc.splitTextToSize(String(text||''),maxW);
   }
@@ -2652,7 +2778,7 @@ async function downloadPDF(mode){
   function drawWatermark(){
     doc.saveGraphicsState();
     doc.setGState(new doc.GState({opacity:0.045}));
-    doc.setFont('helvetica','bold');
+    doc.setFont(_font,'bold');
     doc.setFontSize(12);
     doc.setTextColor(100,140,220);
     for(let wy=-10;wy<310;wy+=15){
@@ -2671,12 +2797,12 @@ async function downloadPDF(mode){
     doc.setFillColor(...blue);
     doc.rect(0,19.5,pageW,1,'F');
     // Brand name
-    doc.setFont('helvetica','bold');
+    doc.setFont(_font,'bold');
     doc.setFontSize(10);
     doc.setTextColor(...cyan);
     doc.text('EDUGLOBALFORGE',margin,12.5);
     // Course info centered
-    doc.setFont('helvetica','bold');
+    doc.setFont(_font,'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(...whiteDim);
     let cinfo=[acronym,faculty,department,courseCode,title].filter(Boolean).join(' · ');
@@ -2685,7 +2811,7 @@ async function downloadPDF(mode){
     if(cinfo!==([acronym,faculty,department,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
     doc.text(cinfo,pageW/2,12.5,{align:'center'});
     // Page number
-    doc.setFont('helvetica','normal');
+    doc.setFont(_font,'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...whiteDim);
     doc.text(`Page ${pageNum}`,pageW-margin,12.5,{align:'right'});
@@ -2695,7 +2821,7 @@ async function downloadPDF(mode){
   function drawFooter(){
     doc.setFillColor(...navy);
     doc.rect(0,pageH-10,pageW,10,'F');
-    doc.setFont('helvetica','normal');
+    doc.setFont(_font,'normal');
     doc.setFontSize(6);
     doc.setTextColor(...whiteDim);
     doc.text('EDUGLOBALFORGE',pageW/2,pageH-3.5,{align:'center'});
@@ -2725,7 +2851,7 @@ async function downloadPDF(mode){
     doc.setFillColor(...cyan);
     doc.roundedRect(margin,y,3.5,bh,1.5,1.5,'F');
     wrapped.forEach((r,i)=>{
-      doc.setFont('helvetica',r.fw);
+      doc.setFont(_font,r.fw);
       doc.setFontSize(r.fs);
       doc.setTextColor(...r.color);
       doc.text(r.text,margin+10,y+padT+i*lh);
@@ -2743,16 +2869,16 @@ async function downloadPDF(mode){
   const badgeCy=y+9;
   doc.setFillColor(...blue);
   doc.circle(badgeCx,badgeCy,badgeR,'F');
-  doc.setFont('helvetica','bold');
+  doc.setFont(_font,'bold');
   doc.setFontSize(7);
   doc.setTextColor(255,255,255);
   doc.text(isAnswers?'2':'1',badgeCx,badgeCy+2.5,{align:'center'});
   // Label
-  doc.setFont('helvetica','bold');
+  doc.setFont(_font,'bold');
   doc.setFontSize(11);
   doc.setTextColor(...white);
   doc.text(badgeLabel,margin+14,badgeCy+0.5);
-  doc.setFont('helvetica','normal');
+  doc.setFont(_font,'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(...whiteDim);
   doc.text(badgeSub,margin+14,badgeCy+6);
@@ -2760,7 +2886,7 @@ async function downloadPDF(mode){
   const pillTxt='Download PDF';
   doc.setFillColor(...blue);
   doc.roundedRect(margin+14,badgeCy+8.5,28,6,3,3,'F');
-  doc.setFont('helvetica','bold');
+  doc.setFont(_font,'bold');
   doc.setFontSize(7);
   doc.setTextColor(255,255,255);
   doc.text(pillTxt,margin+28,badgeCy+12.8,{align:'center'});
@@ -2803,12 +2929,12 @@ async function downloadPDF(mode){
     doc.setFillColor(...blue);
     doc.roundedRect(margin,y,3,qBlockH,1.5,1.5,'F');
     // Number in superscript style (small, dim)
-    doc.setFont('helvetica','bold');
+    doc.setFont(_font,'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(...whiteDim);
     doc.text(qNum,margin+5.5,y+5.5);
     // Question text
-    doc.setFont('helvetica','bold');
+    doc.setFont(_font,'bold');
     doc.setFontSize(11);
     doc.setTextColor(...white);
     qLines.forEach((ln,li)=>{
@@ -2827,10 +2953,10 @@ async function downloadPDF(mode){
         doc.roundedRect(margin+4,y-0.5,contentW-8,oh,1.5,1.5,'F');
         doc.setFillColor(...green);
         doc.roundedRect(margin+4,y-0.5,2.5,oh,1,1,'F');
-        doc.setFont('helvetica','bold');
+        doc.setFont(_font,'bold');
         doc.setTextColor(...green);
       } else {
-        doc.setFont('helvetica','normal');
+        doc.setFont(_font,'normal');
         doc.setTextColor(...whiteDim);
       }
       doc.setFontSize(10);
@@ -2849,7 +2975,7 @@ async function downloadPDF(mode){
       doc.roundedRect(margin+4,y,contentW-8,tagH,2,2,'F');
       doc.setFillColor(...green);
       doc.roundedRect(margin+4,y,2.5,tagH,1,1,'F');
-      doc.setFont('helvetica','bold');
+      doc.setFont(_font,'bold');
       doc.setFontSize(9);
       doc.setTextColor(...green);
       tagLines.forEach((ln,li)=>{
@@ -2863,11 +2989,11 @@ async function downloadPDF(mode){
       doc.roundedRect(margin+4,y,contentW-8,expH,2,2,'F');
       doc.setFillColor(...cyan);
       doc.roundedRect(margin+4,y,2.5,expH,1,1,'F');
-      doc.setFont('helvetica','bold');
+      doc.setFont(_font,'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(...cyan);
       doc.text('EXPLANATION',margin+9,y+6);
-      doc.setFont('helvetica','normal');
+      doc.setFont(_font,'normal');
       doc.setFontSize(9);
       doc.setTextColor(175,200,245);
       expLines.forEach((ln,li)=>{
