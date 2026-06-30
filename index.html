@@ -2804,7 +2804,11 @@ async function _loadPdfFonts(doc) {
     return;
   }
   // Fetch NotoSans TTF files — these have full Unicode coverage including
-  // subscripts, superscripts, Greek, math, chemistry, currency symbols
+  // subscripts, superscripts, Greek, math, chemistry, currency symbols.
+  // We try several CDN mirrors in sequence (not just Google Fonts) because
+  // on mobile networks a single host can be blocked/throttled/CORS-blocked
+  // while another still works — without this, one flaky host silently
+  // drops us to helvetica and corrupts every ⁻¹ ² ³ ⁺ character in the PDF.
   const toBase64 = async (url) => {
     const res = await fetch(url);
     if (!res.ok) {
@@ -2825,9 +2829,27 @@ async function _loadPdfFonts(doc) {
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
   };
+  const fetchWithMirrors = async (urls) => {
+    let lastErr;
+    for (const url of urls) {
+      try { return await toBase64(url); }
+      catch (e) { lastErr = e; }
+    }
+    throw lastErr;
+  };
+  const REGULAR_MIRRORS = [
+    'https://fonts.gstatic.com/s/notosans/v36/o-0IIpQlx3QUlC5A4PNjXhFVatyB1Wk.ttf',
+    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
+    'https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
+  ];
+  const BOLD_MIRRORS = [
+    'https://fonts.gstatic.com/s/notosans/v36/o-0NIpQlx3QUlC5A4PNjXhFVZNyBx2pqPIif.ttf',
+    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
+    'https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
+  ];
   const [regular, bold] = await Promise.all([
-    toBase64('https://fonts.gstatic.com/s/notosans/v36/o-0IIpQlx3QUlC5A4PNjXhFVatyB1Wk.ttf'),
-    toBase64('https://fonts.gstatic.com/s/notosans/v36/o-0NIpQlx3QUlC5A4PNjXhFVZNyBx2pqPIif.ttf'),
+    fetchWithMirrors(REGULAR_MIRRORS),
+    fetchWithMirrors(BOLD_MIRRORS),
   ]);
   _pdfFontCache = { regular, bold };
   doc.addFileToVFS('NotoSans-Regular.ttf', regular);
@@ -2889,16 +2911,31 @@ async function downloadPDF(mode){
     doc.setFontSize(fs);
     let w=maxW;
     let lines=doc.splitTextToSize(String(text||''),w);
-    // Safety net: some font metric edge-cases (bold widths, symbols) can let
-    // splitTextToSize under-wrap so a line still renders past maxW. Verify the
-    // actual rendered width of every line and shrink the wrap width until it
-    // truly fits, so text never spills outside its card.
-    for(let guard=0;guard<10;guard++){
-      const tooWide=lines.some(l=>doc.getTextWidth(l)>maxW+0.15);
+    // Safety net: some font metric edge-cases (bold widths, symbols, or a
+    // fallback font substituting glyphs it can't render) can let
+    // splitTextToSize under-wrap so a line still renders past maxW. Verify
+    // the actual rendered width of every line and shrink the wrap width
+    // until it truly fits, so text never spills outside its card. More
+    // iterations and a tighter margin than before, since a helvetica
+    // fallback rendering Unicode glyphs as substitute boxes can drift
+    // further from the predicted width than a normal font would.
+    for(let guard=0;guard<18;guard++){
+      const tooWide=lines.some(l=>doc.getTextWidth(l)>maxW-0.4);
       if(!tooWide) break;
       w-=1.5;
+      if(w<10){ w=10; lines=doc.splitTextToSize(String(text||''),w); break; }
       lines=doc.splitTextToSize(String(text||''),w);
     }
+    // Hard backstop: even after the guard loop, force-truncate any single
+    // line that is still too wide (can happen with one unbroken long token
+    // like a long number or URL that splitTextToSize won't break mid-word).
+    // This guarantees nothing ever visually crosses the card border.
+    lines=lines.map(l=>{
+      if(doc.getTextWidth(l)<=maxW+0.05) return l;
+      let cut=l;
+      while(cut.length>1 && doc.getTextWidth(cut+'…')>maxW) cut=cut.slice(0,-1);
+      return cut.length<l.length ? cut+'…' : cut;
+    });
     return lines;
   }
 
@@ -2962,9 +2999,17 @@ async function downloadPDF(mode){
     doc.setFontSize(6.5);
     doc.setTextColor(...whiteDim);
     let cinfo=[acronym,faculty,department,courseCode,title].filter(Boolean).join(' · ');
+    const fullCinfo=cinfo;
     const maxCW=pageW-margin*2-70;
-    while(doc.getStringUnitWidth(cinfo)*6.5/doc.internal.scaleFactor>maxCW && cinfo.length>8) cinfo=cinfo.slice(0,-1);
-    if(cinfo!==([acronym,faculty,department,title].filter(Boolean).join(' · '))) cinfo=cinfo.trim()+'…';
+    // Uses doc.getTextWidth (actual rendered glyph width, same method st()
+    // relies on) instead of getStringUnitWidth, since the latter can drift
+    // from true rendered width if a fallback font is active — that drift is
+    // exactly what let this line crowd into "Page N" on the right before.
+    while(cinfo.length>8 && doc.getTextWidth(cinfo)>maxCW) cinfo=cinfo.slice(0,-1);
+    if(cinfo!==fullCinfo) cinfo=cinfo.trim()+'…';
+    // Hard backstop, mirroring st(): guarantees this line can never exceed
+    // maxCW no matter what the font does.
+    while(cinfo.length>1 && doc.getTextWidth(cinfo)>maxCW) cinfo=cinfo.slice(0,-2)+'…';
     doc.text(cinfo,pageW/2,12.5,{align:'center'});
     // Page number
     doc.setFont(_font,'normal');
