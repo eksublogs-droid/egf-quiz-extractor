@@ -2807,6 +2807,18 @@ async function _loadPdfFonts(doc) {
   // subscripts, superscripts, Greek, math, chemistry, currency symbols
   const toBase64 = async (url) => {
     const res = await fetch(url);
+    if (!res.ok) {
+      // Without this check, a blocked/404/expired font URL still "succeeds"
+      // (fetch only rejects on network errors, not HTTP error statuses), so
+      // whatever error-page bytes come back get base64'd and registered as
+      // if they were a real font. jsPDF doesn't validate the TTF until it
+      // actually tries to draw text with it, so the corrupt font silently
+      // passes addFont() and only blows up later — deep into rendering —
+      // with a cryptic "Cannot read properties of undefined (reading
+      // 'widths')" instead of failing fast here where we can fall back to
+      // helvetica cleanly.
+      throw new Error(`Font fetch failed (${res.status}): ${url}`);
+    }
     const buf = await res.arrayBuffer();
     let binary = '';
     const bytes = new Uint8Array(buf);
@@ -3178,10 +3190,14 @@ function downloadJSON(){
   const docTitle=extractedData?.docTitle||extractedData?.courseTitle||'quiz';
   const fnameBase=docTitle.replace(/[^a-zA-Z0-9\s/]/g,'').replace(/\s+/g,'_').replace(/_+/g,'_');
   const blob=new Blob([JSON.stringify(generatedJSON,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
+  a.href=url;
   a.download=`${fnameBase}_quiz.json`;
+  a.style.display='none';
+  document.body.appendChild(a);
   a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },1000);
   toast('JSON downloaded','success');
 }
 
