@@ -2864,34 +2864,67 @@ async function downloadPDF(mode){
   const year=extractedData?.courseYear||'';
   const docTitle=extractedData?.docTitle||title;
   const pageW=210; const pageH=297;
-  const margin=14; const contentW=pageW-margin*2;
+  const margin=11; const contentW=pageW-margin*2;
 
   // ── Colors (RGB) ──
-  const navy      =[8,12,28];
-  const navyCard  =[15,23,42];
+  const navy      =[8,12,24];   // page background (matches in-app navy theme)
+  const navyCard  =[19,27,48];  // card fill — lighter than page bg so cards read clearly
   const navyDeep  =[10,18,50];
-  const blue      =[45,126,255];
-  const cyan      =[0,212,255];
+  const cardBorder=[42,56,92];  // subtle border so cards separate from the navy page bg
+  const blue      =[59,130,255];
+  const cyan      =[34,211,238];
   const white     =[240,244,255];
-  const whiteDim  =[138,153,187];
-  const green     =[34,197,94];
-  const greenDark =[20,55,28];
-  const expBg     =[10,18,50];
-  const tagBg     =[18,46,26];
-  const divider   =[30,42,75];
+  const whiteDim  =[148,163,196];
+  const green     =[52,211,153];
+  const greenDark =[16,46,38];
+  const greenBorder=[40,90,70];
+  const expBg     =[14,22,46];
+  const tagBg     =[14,38,30];
+  const divider   =[36,48,80];
 
   let y=0; let pageNum=1;
 
   function st(text,maxW,fs,fw){
     doc.setFont(_font,fw||'normal');
     doc.setFontSize(fs);
-    return doc.splitTextToSize(String(text||''),maxW);
+    let w=maxW;
+    let lines=doc.splitTextToSize(String(text||''),w);
+    // Safety net: some font metric edge-cases (bold widths, symbols) can let
+    // splitTextToSize under-wrap so a line still renders past maxW. Verify the
+    // actual rendered width of every line and shrink the wrap width until it
+    // truly fits, so text never spills outside its card.
+    for(let guard=0;guard<8;guard++){
+      const tooWide=lines.some(l=>doc.getTextWidth(l)>maxW+0.25);
+      if(!tooWide) break;
+      w-=1.5;
+      lines=doc.splitTextToSize(String(text||''),w);
+    }
+    return lines;
+  }
+
+  // Draws a rounded-rect card with a fill + thin border so it reads clearly
+  // against the navy page background (fill colors alone are too close to bg).
+  function box(x,bx,w,h,r,fillColor,borderColor){
+    doc.setFillColor(...fillColor);
+    if(borderColor){
+      doc.setDrawColor(...borderColor);
+      doc.setLineWidth(0.22);
+      doc.roundedRect(x,bx,w,h,r,r,'FD');
+    } else {
+      doc.roundedRect(x,bx,w,h,r,r,'F');
+    }
+  }
+
+  function fillPageBg(){
+    doc.setFillColor(...navy);
+    doc.rect(0,0,pageW,pageH,'F');
   }
 
   function addPage(){
     drawFooter();
     doc.addPage();
     pageNum++;
+    fillPageBg();
     y=drawHeader();
     drawWatermark();
   }
@@ -2913,8 +2946,8 @@ async function downloadPDF(mode){
   }
 
   function drawHeader(){
-    // Full-width dark banner
-    doc.setFillColor(...navy);
+    // Header banner — slightly lighter than the page bg so it still reads as a band
+    doc.setFillColor(...navyCard);
     doc.rect(0,0,pageW,20,'F');
     // Blue bottom accent
     doc.setFillColor(...blue);
@@ -2942,7 +2975,7 @@ async function downloadPDF(mode){
   }
 
   function drawFooter(){
-    doc.setFillColor(...navy);
+    doc.setFillColor(...navyCard);
     doc.rect(0,pageH-10,pageW,10,'F');
     doc.setFont(_font,'normal');
     doc.setFontSize(6);
@@ -2951,6 +2984,7 @@ async function downloadPDF(mode){
   }
 
   // ── START ──
+  fillPageBg();
   y=drawHeader();
   drawWatermark();
 
@@ -2969,8 +3003,7 @@ async function downloadPDF(mode){
       st(r.text,contentW-20,r.fs,r.fw).forEach(l=>wrapped.push({...r,text:l}));
     });
     const bh=padT+wrapped.length*lh+padB;
-    doc.setFillColor(...navyCard);
-    doc.roundedRect(margin,y,contentW,bh,2,2,'F');
+    box(margin,y,contentW,bh,2,navyCard,cardBorder);
     doc.setFillColor(...cyan);
     doc.roundedRect(margin,y,3.5,bh,1.5,1.5,'F');
     wrapped.forEach((r,i)=>{
@@ -2997,23 +3030,28 @@ async function downloadPDF(mode){
   doc.setTextColor(255,255,255);
   doc.text(isAnswers?'2':'1',badgeCx,badgeCy+2.5,{align:'center'});
   // Label
+  const badgeTextMaxW=pageW-margin-(margin+14);
+  const badgeLabelLines=st(badgeLabel,badgeTextMaxW,11,'bold');
   doc.setFont(_font,'bold');
   doc.setFontSize(11);
   doc.setTextColor(...white);
-  doc.text(badgeLabel,margin+14,badgeCy+0.5);
+  badgeLabelLines.forEach((ln,li)=>doc.text(ln,margin+14,badgeCy+0.5+li*5.2));
+  const badgeSubY=badgeCy+0.5+badgeLabelLines.length*5.2+1.2;
   doc.setFont(_font,'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(...whiteDim);
-  doc.text(badgeSub,margin+14,badgeCy+6);
+  const badgeSubLines=st(badgeSub,badgeTextMaxW,7.5,'normal');
+  badgeSubLines.forEach((ln,li)=>doc.text(ln,margin+14,badgeSubY+li*4.2));
   // Download badge pill (decorative, matches UI)
+  const pillY=badgeSubY+badgeSubLines.length*4.2+2.5;
   const pillTxt='Download PDF';
   doc.setFillColor(...blue);
-  doc.roundedRect(margin+14,badgeCy+8.5,28,6,3,3,'F');
+  doc.roundedRect(margin+14,pillY,28,6,3,3,'F');
   doc.setFont(_font,'bold');
   doc.setFontSize(7);
   doc.setTextColor(255,255,255);
-  doc.text(pillTxt,margin+28,badgeCy+12.8,{align:'center'});
-  y=badgeCy+20;
+  doc.text(pillTxt,margin+28,pillY+4.3,{align:'center'});
+  y=pillY+6+6;
 
   // Horizontal divider
   doc.setFillColor(...divider);
@@ -3023,12 +3061,12 @@ async function downloadPDF(mode){
   // ── RENDER QUESTIONS ──
   verifiedData.forEach((q,qi)=>{
     const qNum=String(qi+1).padStart(2,'0');
-    const qTextMaxW=contentW-18;
+    const qTextMaxW=contentW-24;
     const qLines=st(q.question,qTextMaxW,11,'bold');
     const qBlockH=qLines.length*6.2+8;
 
     // Options
-    const optMaxW=contentW-22;
+    const optMaxW=contentW-30;
     const optLinesList=q.options.map(o=>st(`${o.label}.  ${o.text}`,optMaxW,10,'bold'));
     const optHeights=optLinesList.map(ls=>ls.length*5.3+5);
     const totalOptH=optHeights.reduce((a,b)=>a+b+1.5,0);
@@ -3038,9 +3076,9 @@ async function downloadPDF(mode){
     if(isAnswers){
       // Split explanation on \n so each step gets its own line in the PDF
       const expSteps=(q.explanation||'').split('\n').map(s=>s.trim()).filter(Boolean);
-      expLines=expSteps.flatMap(step=>st(step,contentW-20,9,'normal'));
+      expLines=expSteps.flatMap(step=>st(step,contentW-28,9,'normal'));
       expH=expLines.length*5.2+16;
-      tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-20,9,'bold');
+      tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-28,9,'bold');
       tagH=tagLines.length*5+6;
     }
 
@@ -3049,21 +3087,20 @@ async function downloadPDF(mode){
     else { checkY(qBlockH+6); }
 
     // ── Question block ──
-    doc.setFillColor(...navyCard);
-    doc.roundedRect(margin,y,contentW,qBlockH,2,2,'F');
+    box(margin,y,contentW,qBlockH,2,navyCard,cardBorder);
     doc.setFillColor(...blue);
     doc.roundedRect(margin,y,3,qBlockH,1.5,1.5,'F');
     // Number in superscript style (small, dim)
     doc.setFont(_font,'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(...whiteDim);
-    doc.text(qNum,margin+5.5,y+5.5);
+    doc.text(qNum,margin+6,y+5.5);
     // Question text
     doc.setFont(_font,'bold');
     doc.setFontSize(11);
     doc.setTextColor(...white);
     qLines.forEach((ln,li)=>{
-      doc.text(ln,margin+10,y+6+li*6.2);
+      doc.text(ln,margin+11,y+6+li*6.2);
     });
     y+=qBlockH+2;
 
@@ -3074,8 +3111,7 @@ async function downloadPDF(mode){
       const oh=optHeights[oi];
       checkY(oh+2);
       if(isCorrect){
-        doc.setFillColor(...greenDark);
-        doc.roundedRect(margin+4,y-0.5,contentW-8,oh,1.5,1.5,'F');
+        box(margin+4,y-0.5,contentW-8,oh,1.5,greenDark,greenBorder);
         doc.setFillColor(...green);
         doc.roundedRect(margin+4,y-0.5,2.5,oh,1,1,'F');
         doc.setFont(_font,'bold');
@@ -3086,7 +3122,7 @@ async function downloadPDF(mode){
       }
       doc.setFontSize(10);
       lines.forEach((ln,li)=>{
-        doc.text(ln,margin+10,y+4.5+li*5.3);
+        doc.text(ln,margin+11,y+4.5+li*5.3);
       });
       y+=oh+1.5;
     });
@@ -3096,33 +3132,31 @@ async function downloadPDF(mode){
       y+=2;
       checkY(tagH+expH+6);
       // Green correct badge
-      doc.setFillColor(...tagBg);
-      doc.roundedRect(margin+4,y,contentW-8,tagH,2,2,'F');
+      box(margin+4,y,contentW-8,tagH,2,tagBg,greenBorder);
       doc.setFillColor(...green);
       doc.roundedRect(margin+4,y,2.5,tagH,1,1,'F');
       doc.setFont(_font,'bold');
       doc.setFontSize(9);
       doc.setTextColor(...green);
       tagLines.forEach((ln,li)=>{
-        doc.text(ln,margin+9,y+5+li*5);
+        doc.text(ln,margin+10,y+5+li*5);
       });
       y+=tagH+2;
 
       // ── Explanation ──
       checkY(expH+2);
-      doc.setFillColor(...expBg);
-      doc.roundedRect(margin+4,y,contentW-8,expH,2,2,'F');
+      box(margin+4,y,contentW-8,expH,2,expBg,cardBorder);
       doc.setFillColor(...cyan);
       doc.roundedRect(margin+4,y,2.5,expH,1,1,'F');
       doc.setFont(_font,'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(...cyan);
-      doc.text('EXPLANATION',margin+9,y+6);
+      doc.text('EXPLANATION',margin+10,y+6);
       doc.setFont(_font,'normal');
       doc.setFontSize(9);
-      doc.setTextColor(175,200,245);
+      doc.setTextColor(190,210,250);
       expLines.forEach((ln,li)=>{
-        doc.text(ln,margin+9,y+12+li*5.2);
+        doc.text(ln,margin+10,y+12+li*5.2);
       });
       y+=expH+2;
     }
