@@ -2874,7 +2874,7 @@ async function downloadPDF(mode){
   const blue      =[59,130,255];
   const cyan      =[34,211,238];
   const white     =[240,244,255];
-  const whiteDim  =[148,163,196];
+  const whiteDim  =[178,193,224];
   const green     =[52,211,153];
   const greenDark =[16,46,38];
   const greenBorder=[40,90,70];
@@ -2893,8 +2893,8 @@ async function downloadPDF(mode){
     // splitTextToSize under-wrap so a line still renders past maxW. Verify the
     // actual rendered width of every line and shrink the wrap width until it
     // truly fits, so text never spills outside its card.
-    for(let guard=0;guard<8;guard++){
-      const tooWide=lines.some(l=>doc.getTextWidth(l)>maxW+0.25);
+    for(let guard=0;guard<10;guard++){
+      const tooWide=lines.some(l=>doc.getTextWidth(l)>maxW+0.15);
       if(!tooWide) break;
       w-=1.5;
       lines=doc.splitTextToSize(String(text||''),w);
@@ -2990,17 +2990,17 @@ async function downloadPDF(mode){
 
   // ── COVER INFO BLOCK ──
   const coverRows=[];
-  if(university) coverRows.push({text:university, fs:11, fw:'bold', color:white});
-  if(faculty)    coverRows.push({text:faculty,    fs:8.5,fw:'normal',color:whiteDim});
-  if(department) coverRows.push({text:department, fs:8.5,fw:'normal',color:whiteDim});
+  if(university) coverRows.push({text:university, fs:12.5, fw:'bold', color:white});
+  if(faculty)    coverRows.push({text:faculty,    fs:9.5,fw:'normal',color:whiteDim});
+  if(department) coverRows.push({text:department, fs:9.5,fw:'normal',color:whiteDim});
   const cline=[courseCode,title,semester,year].filter(Boolean).join(' · ');
-  if(cline)      coverRows.push({text:cline,      fs:8.5,fw:'bold', color:[100,170,255]});
+  if(cline)      coverRows.push({text:cline,      fs:9.5,fw:'bold', color:[130,185,255]});
 
   if(coverRows.length){
-    const padT=7; const lh=6.2; const padB=6;
+    const padT=7.5; const lh=7; const padB=6.5;
     let wrapped=[];
     coverRows.forEach(r=>{
-      st(r.text,contentW-20,r.fs,r.fw).forEach(l=>wrapped.push({...r,text:l}));
+      st(r.text,contentW-22,r.fs,r.fw).forEach(l=>wrapped.push({...r,text:l}));
     });
     const bh=padT+wrapped.length*lh+padB;
     box(margin,y,contentW,bh,2,navyCard,cardBorder);
@@ -3030,20 +3030,20 @@ async function downloadPDF(mode){
   doc.setTextColor(255,255,255);
   doc.text(isAnswers?'2':'1',badgeCx,badgeCy+2.5,{align:'center'});
   // Label
-  const badgeTextMaxW=pageW-margin-(margin+14);
-  const badgeLabelLines=st(badgeLabel,badgeTextMaxW,11,'bold');
+  const badgeTextMaxW=pageW-margin-(margin+14)-3;
+  const badgeLabelLines=st(badgeLabel,badgeTextMaxW,12,'bold');
   doc.setFont(_font,'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setTextColor(...white);
-  badgeLabelLines.forEach((ln,li)=>doc.text(ln,margin+14,badgeCy+0.5+li*5.2));
-  const badgeSubY=badgeCy+0.5+badgeLabelLines.length*5.2+1.2;
+  badgeLabelLines.forEach((ln,li)=>doc.text(ln,margin+14,badgeCy+0.5+li*5.7));
+  const badgeSubY=badgeCy+0.5+badgeLabelLines.length*5.7+1.4;
   doc.setFont(_font,'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(8.5);
   doc.setTextColor(...whiteDim);
-  const badgeSubLines=st(badgeSub,badgeTextMaxW,7.5,'normal');
-  badgeSubLines.forEach((ln,li)=>doc.text(ln,margin+14,badgeSubY+li*4.2));
+  const badgeSubLines=st(badgeSub,badgeTextMaxW,8.5,'normal');
+  badgeSubLines.forEach((ln,li)=>doc.text(ln,margin+14,badgeSubY+li*4.8));
   // Download badge pill (decorative, matches UI)
-  const pillY=badgeSubY+badgeSubLines.length*4.2+2.5;
+  const pillY=badgeSubY+badgeSubLines.length*4.8+2.5;
   const pillTxt='Download PDF';
   doc.setFillColor(...blue);
   doc.roundedRect(margin+14,pillY,28,6,3,3,'F');
@@ -3061,14 +3061,14 @@ async function downloadPDF(mode){
   // ── RENDER QUESTIONS ──
   verifiedData.forEach((q,qi)=>{
     const qNum=String(qi+1).padStart(2,'0');
-    const qTextMaxW=contentW-24;
-    const qLines=st(q.question,qTextMaxW,11,'bold');
-    const qBlockH=qLines.length*6.2+8;
+    const qTextMaxW=contentW-27;
+    const qLines=st(q.question,qTextMaxW,12.5,'bold');
+    const qBlockH=qLines.length*7.2+9;
 
     // Options
-    const optMaxW=contentW-30;
-    const optLinesList=q.options.map(o=>st(`${o.label}.  ${o.text}`,optMaxW,10,'bold'));
-    const optHeights=optLinesList.map(ls=>ls.length*5.3+5);
+    const optMaxW=contentW-34;
+    const optLinesList=q.options.map(o=>st(`${o.label}.  ${o.text}`,optMaxW,11.5,'bold'));
+    const optHeights=optLinesList.map(ls=>ls.length*6.2+6);
     const totalOptH=optHeights.reduce((a,b)=>a+b+1.5,0);
 
     // Explanation & tag
@@ -3076,13 +3076,13 @@ async function downloadPDF(mode){
     if(isAnswers){
       // Split explanation on \n so each step gets its own line in the PDF
       const expSteps=(q.explanation||'').split('\n').map(s=>s.trim()).filter(Boolean);
-      expLines=expSteps.flatMap(step=>st(step,contentW-28,9,'normal'));
-      expH=expLines.length*5.2+16;
-      tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-28,9,'bold');
-      tagH=tagLines.length*5+6;
+      expLines=expSteps.flatMap(step=>st(step,contentW-31,10.5,'normal'));
+      expH=expLines.length*6+17;
+      tagLines=st(`>> Correct Answer: ${q.correctLabel}.  ${q.correctText}`,contentW-31,10.5,'bold');
+      tagH=tagLines.length*5.9+7;
     }
 
-    const total=qBlockH+totalOptH+tagH+expH+10;
+    const total=qBlockH+totalOptH+tagH+expH+16;
     if(total<pageH-30 && y+total>pageH-16){ addPage(); }
     else { checkY(qBlockH+6); }
 
@@ -3092,15 +3092,15 @@ async function downloadPDF(mode){
     doc.roundedRect(margin,y,3,qBlockH,1.5,1.5,'F');
     // Number in superscript style (small, dim)
     doc.setFont(_font,'bold');
-    doc.setFontSize(7.5);
+    doc.setFontSize(8);
     doc.setTextColor(...whiteDim);
     doc.text(qNum,margin+6,y+5.5);
     // Question text
     doc.setFont(_font,'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(12.5);
     doc.setTextColor(...white);
     qLines.forEach((ln,li)=>{
-      doc.text(ln,margin+11,y+6+li*6.2);
+      doc.text(ln,margin+11,y+6.5+li*7.2);
     });
     y+=qBlockH+2;
 
@@ -3120,9 +3120,9 @@ async function downloadPDF(mode){
         doc.setFont(_font,'normal');
         doc.setTextColor(...whiteDim);
       }
-      doc.setFontSize(10);
+      doc.setFontSize(11.5);
       lines.forEach((ln,li)=>{
-        doc.text(ln,margin+11,y+4.5+li*5.3);
+        doc.text(ln,margin+11,y+5+li*6.2);
       });
       y+=oh+1.5;
     });
@@ -3136,10 +3136,10 @@ async function downloadPDF(mode){
       doc.setFillColor(...green);
       doc.roundedRect(margin+4,y,2.5,tagH,1,1,'F');
       doc.setFont(_font,'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(10.5);
       doc.setTextColor(...green);
       tagLines.forEach((ln,li)=>{
-        doc.text(ln,margin+10,y+5+li*5);
+        doc.text(ln,margin+10,y+5.5+li*5.9);
       });
       y+=tagH+2;
 
@@ -3149,14 +3149,14 @@ async function downloadPDF(mode){
       doc.setFillColor(...cyan);
       doc.roundedRect(margin+4,y,2.5,expH,1,1,'F');
       doc.setFont(_font,'bold');
-      doc.setFontSize(7.5);
+      doc.setFontSize(8.5);
       doc.setTextColor(...cyan);
-      doc.text('EXPLANATION',margin+10,y+6);
+      doc.text('EXPLANATION',margin+10,y+6.5);
       doc.setFont(_font,'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(190,210,250);
+      doc.setFontSize(10.5);
+      doc.setTextColor(212,227,255);
       expLines.forEach((ln,li)=>{
-        doc.text(ln,margin+10,y+12+li*5.2);
+        doc.text(ln,margin+10,y+13+li*6);
       });
       y+=expH+2;
     }
