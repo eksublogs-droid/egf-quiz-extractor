@@ -270,15 +270,138 @@ async function driveFetch(url, options = {}){
   return res.json();
 }
 
+/* ── FUZZY FOLDER MATCHING HELPERS ──
+   Used ONLY when findFolder() is called with an explicit matchMode of
+   'institution' or 'fuzzy' (see resolveDestinationFolder below). Every
+   existing call site that doesn't pass a matchMode keeps the original
+   exact case-insensitive match — nothing changes for those. */
+
+// Levenshtein edit distance between two strings.
+function _levenshtein(a, b){
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+// Normalize a string for fuzzy comparison: lowercase, strip punctuation, collapse spaces.
+function _normalizeForCompare(s){
+  return (s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// True if two strings are "close enough" to be the same name — handles
+// plurals, spacing, and small typos (NOT institution-type-aware).
+function _namesAreSimilar(a, b){
+  const na = _normalizeForCompare(a);
+  const nb = _normalizeForCompare(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const maxLen = Math.max(na.length, nb.length);
+  const dist = _levenshtein(na, nb);
+  const threshold = Math.max(1, Math.floor(maxLen * 0.2)); // allow ~20% drift
+  return dist <= threshold;
+}
+
+// Institution type keywords, most-specific first.
+const _INSTITUTION_TYPES = ['polytechnic', 'university', 'institute', 'college'];
+
+// Find the institution type in a name, returning both the normalized
+// category ('University'/'Polytechnic'/'Institute'/'College') and the
+// actual word/phrase matched (so it can be stripped correctly even if
+// it was typo'd, e.g. matchedWord "Univeristy" with category "University").
+// Returns null if no type is found.
+function _findInstitutionType(raw){
+  const s = raw || '';
+  const lower = ' ' + s.toLowerCase() + ' ';
+  for (const t of _INSTITUTION_TYPES) {
+    if (lower.includes(t)) {
+      return { category: t.charAt(0).toUpperCase() + t.slice(1), matchedWord: t };
+    }
+  }
+  if (/\buni\b/.test(lower)) return { category: 'University', matchedWord: 'uni' };
+  // Fuzzy fallback: check each word against each type keyword for a close typo match.
+  const words = lower.trim().split(/\s+/);
+  for (const w of words) {
+    if (w.length < 4) continue; // too short to safely fuzzy-match
+    for (const t of _INSTITUTION_TYPES) {
+      const dist = _levenshtein(w, t);
+      if (dist <= 2 && Math.abs(w.length - t.length) <= 2) {
+        return { category: t.charAt(0).toUpperCase() + t.slice(1), matchedWord: w };
+      }
+    }
+  }
+  return null;
+}
+
+// Extract a normalized institution type from a name, or null if none found.
+function _extractInstitutionType(raw){
+  const found = _findInstitutionType(raw);
+  return found ? found.category : null;
+}
+
+// Split a raw institution name into { type, name }: `type` is the
+// normalized institution type, `name` is the remaining words with the
+// type keyword and filler word "of" stripped out.
+function _splitInstitutionName(raw){
+  const s = (raw || '').trim();
+  const found = _findInstitutionType(s);
+  if (!found) return { type: null, name: s };
+  const typeRe = new RegExp('\\b' + found.matchedWord + '\\b', 'ig');
+  let name = s.replace(typeRe, ' ').replace(/\bof\b/ig, ' ');
+  name = name.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+  return { type: found.category, name };
+}
+
+// True if two institution names refer to the same school. The type MUST
+// match exactly (so "Delta State University" can never merge with
+// "Delta State Polytechnic"); the name part tolerates minor spelling drift.
+function _institutionNamesMatch(a, b){
+  const sa = _splitInstitutionName(a);
+  const sb = _splitInstitutionName(b);
+  if (!sa.type || !sb.type) return _namesAreSimilar(a, b);
+  if (sa.type !== sb.type) return false;
+  return _namesAreSimilar(sa.name, sb.name);
+}
+
 // Find a child folder by name (case-insensitive) inside parentId. Returns folder id or null.
 // We list ALL folders in the parent and compare lowercased names so that
 // existing folders like "Faculty" are found even if we search for "faculty".
-async function findFolder(name, parentId){
+// matchMode:
+//   (default)      — original exact case-insensitive match, UNCHANGED.
+//   'institution'  — type-exact + name-fuzzy match (see _institutionNamesMatch).
+//   'fuzzy'        — plain drift-tolerant match (see _namesAreSimilar).
+async function findFolder(name, parentId, matchMode){
   const q = encodeURIComponent(
     `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
   );
   const data = await driveFetch(`${DRIVE_API}/files?q=${q}&fields=files(id,name)&pageSize=1000`);
   if (!data.files || !data.files.length) return null;
+
+  if (matchMode === 'institution') {
+    const match = data.files.find(f => _institutionNamesMatch(f.name, name));
+    return match ? match.id : null;
+  }
+  if (matchMode === 'fuzzy') {
+    const match = data.files.find(f => _namesAreSimilar(f.name, name));
+    return match ? match.id : null;
+  }
+
   const nameLower = name.toLowerCase();
   const match = data.files.find(f => f.name.toLowerCase() === nameLower);
   return match ? match.id : null;
@@ -299,8 +422,8 @@ async function createFolder(name, parentId){
 }
 
 // Find folder by name, or create it if missing. Returns folder id.
-async function findOrCreateFolder(name, parentId){
-  const existing = await findFolder(name, parentId);
+async function findOrCreateFolder(name, parentId, matchMode){
+  const existing = await findFolder(name, parentId, matchMode);
   if (existing) return existing;
   return createFolder(name, parentId);
 }
@@ -332,10 +455,24 @@ async function uploadFileToFolder(blob, filename, folderId){
 function resolveUniversityFolderName(universityRaw){
   const u = (universityRaw || '').trim();
   if (!u) return 'Unknown University';
-  const lower = u.toLowerCase();
-  if (lower.includes('ekiti state') || lower === 'eksu' || lower.includes('(eksu)')) {
-    return 'Ekiti State University (EKSU)';
+
+  // 1. Direct acronym match (e.g. "EKSU", "eksu", "(EKSU)", "UNILAG")
+  const acronymKey = u.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (typeof UNIVERSITY_ALIASES !== 'undefined' && UNIVERSITY_ALIASES[acronymKey]) {
+    return UNIVERSITY_ALIASES[acronymKey];
   }
+
+  // 2. Type-exact + name-fuzzy match against the alias list (handles typos/
+  //    variants like "Ekiti State Uni" or "Ekiti State Univeristy"). Only
+  //    attempted when the input itself looks like an institution name
+  //    (has a detectable type), so short/unrelated strings can't misfire.
+  if (typeof UNIVERSITY_ALIASES !== 'undefined' && _extractInstitutionType(u)) {
+    for (const key in UNIVERSITY_ALIASES) {
+      const canonical = UNIVERSITY_ALIASES[key];
+      if (_institutionNamesMatch(u, canonical)) return canonical;
+    }
+  }
+
   return u; // any other university: use the extracted name as-is for the new folder
 }
 
@@ -344,9 +481,22 @@ function resolveFacultyFolderName(facultyRaw){
   if (!f) return 'GST PAST QUESTIONS';
   // Normalize common GST course naming into the GST bucket
   if (/general\s*studies|^gst\b/i.test(f)) return 'GST PAST QUESTIONS';
-  // Convert to title case so it matches existing Drive folders
-  // e.g. "FACULTY OF SCIENCE" or "faculty of science" → "Faculty of Science"
-  return f.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+  // Strip any existing "Faculty" / "Faculty of" prefix (in any casing) so
+  // we can rebuild it consistently no matter how the AI phrased it.
+  let core = f.replace(/^\s*faculty\s*(of)?\s*/i, '').trim();
+  if (!core) core = f; // safety net: never end up with an empty name
+
+  // Title-case the remaining words, keeping small joining words lowercase
+  // (except when they're the very first word).
+  const smallWords = new Set(['of', 'and', 'the']);
+  const titled = core
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w, i) => (smallWords.has(w) && i !== 0) ? w : (w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+
+  return `Faculty of ${titled}`;
 }
 
 function resolveSemesterFolderName(semesterRaw){
@@ -372,14 +522,14 @@ async function resolveDestinationFolder(universityRaw, facultyRaw, departmentRaw
   const departmentName  = resolveDepartmentFolderName(departmentRaw);
   const semesterName    = resolveSemesterFolderName(semesterRaw);
 
-  const universityFolderId = await findOrCreateFolder(universityName, DRIVE_ROOT_FOLDER_ID);
+  const universityFolderId = await findOrCreateFolder(universityName, DRIVE_ROOT_FOLDER_ID, 'institution');
   const facultyRootId       = await findOrCreateFolder('Faculty', universityFolderId);
-  const facultyFolderId     = await findOrCreateFolder(facultyName, facultyRootId);
+  const facultyFolderId     = await findOrCreateFolder(facultyName, facultyRootId, 'fuzzy');
 
   let semesterParentId;
   if (departmentName) {
     const departmentRootId  = await findOrCreateFolder('Department', facultyFolderId);
-    const departmentFolderId = await findOrCreateFolder(departmentName, departmentRootId);
+    const departmentFolderId = await findOrCreateFolder(departmentName, departmentRootId, 'fuzzy');
     semesterParentId = departmentFolderId;
   } else {
     semesterParentId = facultyFolderId;
